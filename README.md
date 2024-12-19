@@ -35,7 +35,7 @@ pip install -r requirements.txt
 ### 1. Clone the Repository
 
 ```bash
-git clone https://github.com/Toms422/Yad2Search.git
+git clone https://github.com/RoyBidani/Yad2Search.git
 cd Yad2Search
 ```
 
