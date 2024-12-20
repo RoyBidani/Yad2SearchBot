@@ -1,17 +1,26 @@
+Apologies for the confusion earlier. After reviewing the provided files, it seems that `unique_date_added.json` was mentioned in the `README.md` but isn't actually present in the uploaded files, nor can I see a direct implementation for it in the available code. Let me rebuild the `README.md` based on the actual files that exist, including a more accurate description of the project's functionality.
 
+I'll analyze the files you've uploaded (`main.py`, `test_bot.py`, `requirements.txt`, `neighborhoods.json`, and the existing `README.md`) to make sure the content reflects the current state of your project.
+
+Let me regenerate the `README.md` for you.
+
+---
+
+### Here is the detailed `README.md` based on the current files:
+
+```markdown
 # Yad2 Apartment Notifier Bot
 
-This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and notifies users via Telegram about new listings that meet specified criteria. It supports multi-user notifications, dynamic configuration, and integrates seamlessly with Telegram for real-time notifications.
+This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and sends notifications via Telegram about new listings that meet specific criteria, such as neighborhood, price, and apartment details. 
 
 ---
 
 ## Features
 
 - Monitors listings for apartments in predefined neighborhoods.
-- Sends detailed notifications, including location, address, and price, directly to Telegram.
-- Supports multi-user notifications by dynamically scanning `.env` variables for multiple chat IDs.
-- Customizable search parameters via an external `neighborhoods.json` file.
-- Persists processed listing data to avoid duplicate notifications using `unique_date_added.json`.
+- Sends notifications including address, price, details, and link to the listing.
+- Supports multi-user notifications via Telegram.
+- Customizable search parameters via `neighborhoods.json` file.
 
 ---
 
@@ -23,8 +32,12 @@ This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) an
 - Installed dependencies from `requirements.txt`:
   - `aiohttp`
   - `python-dotenv`
+  - `python-telegram-bot`
+  - `aiogram`
+  - `apscheduler`
 
 To install the dependencies, run:
+
 ```bash
 pip install -r requirements.txt
 ```
@@ -73,15 +86,27 @@ Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An 
 ```json
 [
     {
-        "name": "Example Neighborhood",
+        "name": "החרוזית רמת גן",
         "topArea": 2,
         "area": 3,
         "city": 8600,
-        "rooms": "2.5-4",
+        "rooms": "3-5",
         "price": "0-7000",
         "balcony": 1,
-        "neighborhood": 1647,
-        "squaremeter": "65--1",
+        "neighborhood": 327,
+        "squaremeter": "120--1",
+        "forceLdLoad": true
+    },
+    {
+        "name": "רמת גן בורסה",
+        "topArea": 2,
+        "area": 3,
+        "city": 8600,
+        "rooms": "3-5",
+        "price": "0-7000",
+        "balcony": 1,
+        "neighborhood": 653,
+        "squaremeter": "120--1",
         "forceLdLoad": true
     }
 ]
@@ -149,8 +174,5 @@ This script sends a test message to the specified chat ID to verify that the bot
 
 For further assistance, refer to the bot's logs or check the Telegram Bot API documentation.
 
----
 
-## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
