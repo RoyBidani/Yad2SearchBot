@@ -1,0 +1,55 @@
+name: Yad2 Apartment Notifier Bot
+
+on:
+  schedule:
+    - cron: '0 * * * *' # Runs once an hour
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.8'
+
+    - name: Install Dependencies
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+        pip install -r requirements.txt
+
+    # Download the previous unique_date_added.json artifact (if it exists)
+    - name: Download Previous Data
+      id: download-artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: unique_date_added
+        path: .
+
+    - name: Check for Existing Data
+      run: |
+        if [ ! -f unique_date_added.json ]; then
+          echo "unique_date_added.json not found, creating a new file."
+          echo "[]" > unique_date_added.json
+        fi
+
+    - name: Run Yad2 Bot
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        CHAT_ID_USER: ${{ secrets.CHAT_ID_USER }}
+        # Add other chat IDs as secrets in GitHub
+      run: |
+        source venv/bin/activate
+        python main.py --neighborhoods neighborhoods.json
+
+    # Upload the updated unique_date_added.json file as an artifact
+    - name: Upload Updated Data
+      uses: actions/upload-artifact@v3
+      with:
+        name: unique_date_added
+        path: unique_date_added.json
