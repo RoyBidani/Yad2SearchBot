@@ -135,87 +135,22 @@ Use `test_bot.py` to verify your Telegram integration:
 python test_bot.py
 ```
 
-This script sends a test message to all specified chat IDs to confirm the bot setup.
-
----
-
-## Data Persistence
-
-### `unique_date_added.json`
-
-- This file stores the IDs of listings already processed to avoid duplicate notifications.
-- It is automatically updated after each successful notification.
-- If the file is deleted or its contents are cleared, all listings will be reprocessed as if they were new.
-
----
-
-## Multi-User Notifications
-
-- The script dynamically scans the `.env` file for all `CHAT_ID_*` variables.
-- Each variable corresponds to a recipient who will receive notifications.
-- Logs the list of recipients (usernames) at the start of execution for transparency.
-
----
-
-## Customization
-
-### Modifying Search Parameters
-
-You can customize the search parameters for different neighborhoods by editing the `neighborhoods.json` file. Example:
-
-```json
-{
-    "name": "New Neighborhood",
-    "topArea": 2,
-    "area": 3,
-    "city": 8600,
-    "rooms": "3-5",
-    "price": "0-7000",
-    "balcony": 1,
-    "neighborhood": 327,
-    "squaremeter": "120--1",
-    "forceLdLoad": true
-}
-```
-
-- `city`: The city code (e.g., 8600 for Ramat Gan).
-- `rooms`: Range of room counts (e.g., `"3-5"`).
-- `price`: Price range in NIS.
-- `squaremeter`: Size range in square meters.
+This script sends a test message to the specified chat ID to verify that the bot is working correctly.
 
 ---
 
 ## Troubleshooting
 
-### Common Errors
+### Common Issues
 
-1. **Missing Tokens**:
-   - Ensure `TELEGRAM_BOT_TOKEN` and `CHAT_ID_*` variables are correctly set in the `.env` file.
+- **Unauthorized Error**: Ensure that your Telegram Bot Token is correctly set in the `.env` file. The error may also occur if the bot is not properly authorized or if there's an issue with the chat ID. 
+- **Connection Timeout**: If you encounter timeouts while sending messages, adjust the connection pool size or increase the timeout values as needed in the bot's setup.
+- **Bot not sending messages**: Check your bot's permissions and ensure that your chat ID is correct. You can also check the logs to identify specific issues with sending messages.
 
-2. **Bot Not Responding**:
-   - Check logs in `bot.log` for details.
-   - Verify network connectivity and Telegram API status.
-
-3. **Dependencies Issues**:
-   - Run `pip install -r requirements.txt` to ensure all dependencies are installed.
+For further assistance, refer to the bot's logs or check the Telegram Bot API documentation.
 
 ---
 
-## Security Considerations
+## License
 
-- **Environment Variables**: Protect the `.env` file as it contains sensitive information like bot tokens and chat IDs.
-- **Rate Limiting**: Avoid exceeding Telegram API rate limits by testing with a small number of recipients first.
-
----
-
-## Contributing
-
-Feel free to contribute by submitting issues or pull requests.
-
----
-
-## Final Notes
-
-- Regularly back up the `unique_date_added.json` file to prevent data loss.
-- Ensure all `.env` variables and `neighborhoods.json` are correctly configured before execution.
-- Logs (`bot.log`) provide detailed execution flow and can assist with debugging.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
