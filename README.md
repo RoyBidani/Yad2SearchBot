@@ -1,7 +1,7 @@
 
 # Yad2 Apartment Notifier Bot
 
-This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and notifies users via Telegram about new listings that meet specified criteria. It allows customization for specific neighborhoods and integrates seamlessly with Telegram for real-time notifications.
+This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and notifies users via Telegram about new listings that meet specified criteria. It supports multi-user notifications, dynamic configuration, and integrates seamlessly with Telegram for real-time notifications.
 
 ---
 
@@ -9,7 +9,9 @@ This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) an
 
 - Monitors listings for apartments in predefined neighborhoods.
 - Sends detailed notifications, including location, address, and price, directly to Telegram.
-- Allows customization of search criteria such as price, rooms, and neighborhoods.
+- Supports multi-user notifications by dynamically scanning `.env` variables for multiple chat IDs.
+- Customizable search parameters via an external `neighborhoods.json` file.
+- Persists processed listing data to avoid duplicate notifications using `unique_date_added.json`.
 
 ---
 
@@ -20,7 +22,6 @@ This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) an
 - **Python 3.8+**
 - Installed dependencies from `requirements.txt`:
   - `aiohttp`
-  - `python-telegram-bot`
   - `python-dotenv`
 
 To install the dependencies, run:
@@ -55,21 +56,39 @@ Create a `.env` file in the project directory with the following content:
 
 ```env
 TELEGRAM_BOT_TOKEN=<your-telegram-bot-token>
-CHAT_ID_USER=<your-chat-id>
+CHAT_ID_USER=<your-chat-id>  # The admin
+CHAT_ID_NAME1=<another-chat-id>
+CHAT_ID_NAME2=<another-chat-id>
 ```
 
-### 4. Obtain Telegram Bot Token and Chat ID
+- Replace `<your-telegram-bot-token>` with your bot token.
+- Add multiple `CHAT_ID_*` variables for each user who will receive notifications.
 
-1. **Telegram Bot Token**:
-   - Open Telegram and message [@BotFather](https://core.telegram.org/bots#botfather).
-   - Create a new bot using `/newbot`.
-   - Follow the instructions to receive a unique bot token.
+---
 
-2. **Chat ID**:
-   - Start a chat with your bot and send any message.
-   - Visit `https://api.telegram.org/bot<your-bot-token>/getUpdates` to find your chat ID from the JSON response.
+### 4. Create the `neighborhoods.json` File
 
-Replace `<your-telegram-bot-token>` and `<your-chat-id>` with your actual values.
+Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An example structure:
+
+```json
+[
+    {
+        "name": "Example Neighborhood",
+        "topArea": 2,
+        "area": 3,
+        "city": 8600,
+        "rooms": "2.5-4",
+        "price": "0-7000",
+        "balcony": 1,
+        "neighborhood": 1647,
+        "squaremeter": "65--1",
+        "forceLdLoad": true
+    }
+]
+```
+
+- Save the file as `neighborhoods.json` in the same directory as the script.
+- Fields such as `rooms`, `price`, and `squaremeter` are customizable to your criteria.
 
 ---
 
@@ -80,8 +99,10 @@ Replace `<your-telegram-bot-token>` and `<your-chat-id>` with your actual values
 Run the bot to monitor listings and send notifications:
 
 ```bash
-python main.py
+python main.py --neighborhoods neighborhoods.json
 ```
+
+If your `neighborhoods.json` file has a custom path or name, provide it with the `--neighborhoods` argument.
 
 ### Testing the Bot
 
@@ -91,7 +112,25 @@ Use `test_bot.py` to verify your Telegram integration:
 python test_bot.py
 ```
 
-This script sends a test message to your chat ID to confirm the bot setup.
+This script sends a test message to all specified chat IDs to confirm the bot setup.
+
+---
+
+## Data Persistence
+
+### `unique_date_added.json`
+
+- This file stores the IDs of listings already processed to avoid duplicate notifications.
+- It is automatically updated after each successful notification.
+- If the file is deleted or its contents are cleared, all listings will be reprocessed as if they were new.
+
+---
+
+## Multi-User Notifications
+
+- The script dynamically scans the `.env` file for all `CHAT_ID_*` variables.
+- Each variable corresponds to a recipient who will receive notifications.
+- Logs the list of recipients (usernames) at the start of execution for transparency.
 
 ---
 
@@ -99,39 +138,27 @@ This script sends a test message to your chat ID to confirm the bot setup.
 
 ### Modifying Search Parameters
 
-You can customize the search parameters for different neighborhoods by editing the `neighborhoods_params` list in `main.py`. Example:
+You can customize the search parameters for different neighborhoods by editing the `neighborhoods.json` file. Example:
 
-```python
+```json
 {
-    'name': "Example Neighborhood",
-    'topArea': 2,
-    'area': 3,
-    'city': 8600,
-    'rooms': '2.5-4',
-    'price': '0-7000',
-    'balcony': 1,
-    'neighborhood': 1647,
-    'squaremeter': '65--1',
-    'forceLdLoad': True
+    "name": "New Neighborhood",
+    "topArea": 2,
+    "area": 3,
+    "city": 8600,
+    "rooms": "3-5",
+    "price": "0-7000",
+    "balcony": 1,
+    "neighborhood": 327,
+    "squaremeter": "120--1",
+    "forceLdLoad": true
 }
 ```
 
 - `city`: The city code (e.g., 8600 for Ramat Gan).
-- `rooms`: Range of room counts (e.g., '2.5-4').
+- `rooms`: Range of room counts (e.g., `"3-5"`).
 - `price`: Price range in NIS.
-- `neighborhood`: Neighborhood code.
-
-### Logging and Debugging
-
-Logs are saved to `bot.log` for monitoring execution details and debugging.
-
----
-
-## Data Persistence
-
-- **File**: `unique_date_added.json`
-  - Stores the IDs of listings already processed to avoid duplicate notifications.
-  - Automatically updated after each successful notification.
+- `squaremeter`: Size range in square meters.
 
 ---
 
@@ -140,8 +167,8 @@ Logs are saved to `bot.log` for monitoring execution details and debugging.
 ### Common Errors
 
 1. **Missing Tokens**:
-   - Ensure `TELEGRAM_BOT_TOKEN` and `CHAT_ID_USER` are correctly set in the `.env` file.
-   
+   - Ensure `TELEGRAM_BOT_TOKEN` and `CHAT_ID_*` variables are correctly set in the `.env` file.
+
 2. **Bot Not Responding**:
    - Check logs in `bot.log` for details.
    - Verify network connectivity and Telegram API status.
@@ -151,9 +178,21 @@ Logs are saved to `bot.log` for monitoring execution details and debugging.
 
 ---
 
+## Security Considerations
+
+- **Environment Variables**: Protect the `.env` file as it contains sensitive information like bot tokens and chat IDs.
+- **Rate Limiting**: Avoid exceeding Telegram API rate limits by testing with a small number of recipients first.
+
+---
+
 ## Contributing
 
 Feel free to contribute by submitting issues or pull requests.
 
 ---
 
+## Final Notes
+
+- Regularly back up the `unique_date_added.json` file to prevent data loss.
+- Ensure all `.env` variables and `neighborhoods.json` are correctly configured before execution.
+- Logs (`bot.log`) provide detailed execution flow and can assist with debugging.

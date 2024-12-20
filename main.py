@@ -5,6 +5,7 @@ import os
 import logging
 from urllib.parse import urlencode
 from dotenv import load_dotenv  # If using python-dotenv
+import argparse
 
 # Load environment variables from .env file
 load_dotenv()
@@ -131,6 +132,22 @@ async def handle_new_properties(data, unique_date_added, neighborhood, bot_token
         except Exception as e:
             logger.error(f"Error processing feed item: {e}")
 
+def load_neighborhoods(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            neighborhoods = json.load(file)
+            logger.debug(f"Loaded {len(neighborhoods)} neighborhoods from {file_path}")
+            return neighborhoods
+    except FileNotFoundError:
+        logger.error(f"Neighborhoods file not found: {file_path}")
+        return []
+    except json.JSONDecodeError as e:
+        logger.error(f"Error decoding JSON from {file_path}: {e}")
+        return []
+    except Exception as e:
+        logger.error(f"Unexpected error loading neighborhoods from {file_path}: {e}")
+        return []
+
 async def main_task(params, neighborhood, bot_token, chat_ids, session, headers, semaphore):
     TotalCheck = False
     json_file_path = 'unique_date_added.json'
@@ -145,7 +162,7 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
         unique_date_added = set()
 
     count = 0
-    base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
+    base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/forsale"
 
     for i in range(1):  # Adjust the range as needed for pagination
         params['page'] = i
@@ -188,7 +205,7 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
 
     return TotalCheck
 
-async def run_bot():
+async def run_bot(neighborhoods_file):
     # Load sensitive information from environment variables
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not bot_token:
@@ -217,33 +234,11 @@ async def run_bot():
     # Extract chat_ids for further processing
     chat_ids = list(chat_id_dict.values())
 
-    # Define property search parameters for different neighborhoods
-    neighborhoods_params = [
-        {'name': "הראשונים-רג", 'topArea': 2, 'area': 3, 'city': 8600, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 1647, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "החשמונאים-רג", 'topArea': 2, 'area': 3, 'city': 8600, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 1477, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "החרוזים-רג", 'topArea': 2, 'area': 3, 'city': 8600, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 327, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "בורכוב-גבעתיים", 'topArea': 2, 'area': 3, 'city': 6300, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 355, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "הלה-גבעתיים", 'topArea': 2, 'area': 3, 'city': 6300, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 991510, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "ארלוזורוב-גבעתיים", 'topArea': 2, 'area': 3, 'city': 6300, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 1642, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "גבעת רמבם-גבעתיים", 'topArea': 2, 'area': 3, 'city': 6300, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 1643, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "קריית יוסף-גבעתיים", 'topArea': 2, 'area': 3, 'city': 6300, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 1644, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "נחלת יצחק-תל אביב", 'topArea': 2, 'area': 1, 'city': 5000, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 317, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "מונטיפיורי-תל אביב", 'topArea': 2, 'area': 1, 'city': 5000, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'neighborhood': 485, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "צפון ישן-תל אביב", 'topArea': 2, 'area': 1, 'city': 5000, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'parking': 1, 'neighborhood': 204, 'squaremeter': '65--1', 'forceLdLoad': True},
-        {'name': "בבלי-תל אביב", 'topArea': 2, 'area': 1, 'city': 5000, 'rooms': '2.5-4',
-         'price': '0-7000', 'balcony': 1, 'parking': 1, 'neighborhood': 1518, 'squaremeter': '65--1', 'forceLdLoad': True},
-    ]
+    # Load neighborhoods from the specified JSON file
+    neighborhoods_params = load_neighborhoods(neighborhoods_file)
+    if not neighborhoods_params:
+        logger.error("No neighborhoods loaded. Exiting.")
+        return
 
     # Define headers (replace with your actual headers)
     headers = {
@@ -290,4 +285,12 @@ async def run_bot():
             logger.error(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    parser = argparse.ArgumentParser(description="Yad2 Apartment Notifier Bot")
+    parser.add_argument(
+        '--neighborhoods',
+        type=str,
+        default='neighborhoods.json',
+        help='Path to the neighborhoods JSON file'
+    )
+    args = parser.parse_args()
+    asyncio.run(run_bot(args.neighborhoods))
