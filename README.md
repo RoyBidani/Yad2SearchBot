@@ -92,6 +92,29 @@ Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An 
 
 ---
 
+## How to Create a Telegram Bot and Obtain Token/Chat IDs
+
+### 1. Create a Telegram Bot
+
+1. Open Telegram and search for [@BotFather](https://core.telegram.org/bots#botfather).
+2. Start a chat with BotFather and send the command `/newbot`.
+3. Follow the instructions to create a bot:
+   - Provide a name for your bot.
+   - Set a unique username ending with `bot` (e.g., `MyNotifierBot`).
+4. Once created, BotFather will provide a **Bot Token**. Save this token securely.
+
+### 2. Obtain Chat IDs
+
+1. Start a chat with your bot by searching for its username on Telegram and sending any message.
+2. Visit the following URL in your browser, replacing `<your-bot-token>` with your actual bot token:
+   ```
+   https://api.telegram.org/bot<your-bot-token>/getUpdates
+   ```
+3. In the JSON response, look for the `"chat"` field under `"message"`. The `"id"` field within `"chat"` is your chat ID.
+4. Repeat this process for all users who will interact with the bot.
+
+---
+
 ## Usage
 
 ### Running the Main Script
