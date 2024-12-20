@@ -1,9 +1,8 @@
 name: Yad2 Apartment Notifier Bot
-
 on:
   schedule:
     - cron: '0 * * * *' # Runs once an hour
-
+  workflow_dispatch: # Allows manual triggering
 jobs:
   run-bot:
     runs-on: ubuntu-latest
