@@ -83,18 +83,18 @@ async def fetch_json(session, url, headers, retries=3):
     logger.error(f"Failed to fetch {url} after {retries} attempts")
     return None
 
-async def process_feed_items(data, unique_date_added, neighborhood, bot_token, chat_ids, session):
+async def process_feed_items(data, unique_links, neighborhood, bot_token, chat_ids, session):
     count = 0
     for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
         try:
-            date_added = d['date_added']
-            if date_added not in unique_date_added and d.get('feed_source') == "private":
+            item_id = d.get('id')
+            if item_id and item_id not in unique_links and d.get('feed_source') == "private":
                 count += 1
         except (KeyError, ValueError):
             continue
     return count
 
-async def handle_new_properties(data, unique_date_added, neighborhood, bot_token, chat_ids, session, semaphore):
+async def handle_new_properties(data, unique_links, neighborhood, bot_token, chat_ids, session, semaphore):
     for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
         try:
             neighborhood_name = d.get('neighborhood', 'Unknown Neighborhood')
@@ -105,13 +105,13 @@ async def handle_new_properties(data, unique_date_added, neighborhood, bot_token
             price = d.get('price', 'No Price')
             row_3 = d.get('row_3', ['No Detail 1', 'No Detail 2', 'No Detail 3'])
             details = ", ".join(row_3[:3])
-            date_added = d.get('date_added')
-            Addid = f"https://www.yad2.co.il/item/{d.get('id', '')}"
+            item_id = d.get('id')
+            Addid = f"https://www.yad2.co.il/item/{item_id}"
 
-            if date_added and date_added not in unique_date_added:
-                unique_date_added.add(date_added)
+            if item_id and item_id not in unique_links:
+                unique_links.add(item_id)
                 message = f'*כתובת*: {Address}, *מחיר*: {price}. *פרטים נוספים*: {details}. [קישור למודעה]({Addid})'
-                
+
                 # Create tasks to send message to all chat_ids
                 message_tasks = [
                     asyncio.create_task(send_message_async(bot_token, chat_id, message, semaphore))
@@ -121,7 +121,7 @@ async def handle_new_properties(data, unique_date_added, neighborhood, bot_token
 
                 latitude = d.get('coordinates', {}).get('latitude', 0)
                 longitude = d.get('coordinates', {}).get('longitude', 0)
-                
+
                 # Create tasks to send location to all chat_ids
                 location_tasks = [
                     asyncio.create_task(send_location_async(bot_token, chat_id, latitude, longitude, semaphore))
@@ -150,19 +150,19 @@ def load_neighborhoods(file_path):
 
 async def main_task(params, neighborhood, bot_token, chat_ids, session, headers, semaphore):
     TotalCheck = False
-    json_file_path = 'unique_date_added.json'
+    json_file_path = 'unique_links.json'
     try:
         if os.path.exists(json_file_path):
             with open(json_file_path, 'r', encoding='utf-8') as json_file:
-                unique_date_added = set(json.load(json_file))
+                unique_links = set(json.load(json_file))
         else:
-            unique_date_added = set()
+            unique_links = set()
     except Exception as e:
         logger.error(f"Error reading {json_file_path}: {e}")
-        unique_date_added = set()
+        unique_links = set()
 
     count = 0
-    base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/forsale"
+    base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
 
     for i in range(1):  # Adjust the range as needed for pagination
         params['page'] = i
@@ -176,14 +176,14 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
 
         if response_json:
             # First pass: Count new apartments
-            new_count = await process_feed_items(response_json, unique_date_added, neighborhood, bot_token, chat_ids, session)
+            new_count = await process_feed_items(response_json, unique_links, neighborhood, bot_token, chat_ids, session)
             count += new_count
             if new_count > 0:
                 TotalCheck = True
                 logger.info(f"Found {new_count} new apartments in {neighborhood}")
 
             # Second pass: Handle new properties
-            await handle_new_properties(response_json, unique_date_added, neighborhood, bot_token, chat_ids, session, semaphore)
+            await handle_new_properties(response_json, unique_links, neighborhood, bot_token, chat_ids, session, semaphore)
         else:
             logger.error(f"Request failed for neighborhood {neighborhood} with URL: {final_url}")
 
@@ -195,13 +195,13 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
         ]
         await asyncio.gather(*summary_tasks, return_exceptions=True)
 
-    # Save the updated unique_date_added to the JSON file
+    # Save the updated unique_links to the JSON file
     try:
         with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump(list(unique_date_added), json_file, ensure_ascii=False, indent=4)
-            logger.debug(f"Saved unique_date_added to {json_file_path}")
+            json.dump(list(unique_links), json_file, ensure_ascii=False, indent=4)
+            logger.debug(f"Saved unique_links to {json_file_path}")
     except Exception as e:
-        logger.error(f"Failed to save unique_date_added: {e}")
+        logger.error(f"Failed to save unique_links: {e}")
 
     return TotalCheck
 
