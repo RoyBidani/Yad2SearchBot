@@ -4,8 +4,6 @@ import json
 import os
 import logging
 from urllib.parse import urlencode
-from io import BytesIO
-from aiohttp import ClientError, ClientTimeout
 from dotenv import load_dotenv  # If using python-dotenv
 
 # Load environment variables from .env file
@@ -35,8 +33,7 @@ async def send_message_async(bot_token, chat_id, message_text, semaphore):
             "parse_mode": "Markdown",
         }
         debug_url = f"{url}?chat_id={chat_id}&text={message_text}"
-        logger.debug(f"Token: {bot_token}")
-        logger.debug(f"Chat ID: {chat_id}")
+        logger.debug(f"Sending message to Chat ID {chat_id}")
         logger.debug(f"Command: {debug_url}")
 
         try:
@@ -45,9 +42,9 @@ async def send_message_async(bot_token, chat_id, message_text, semaphore):
                     if response.status == 200:
                         logger.info(f"Message sent to {chat_id}: {message_text}")
                     else:
-                        logger.error(f"Failed to send message: {response.status}, {await response.text()}")
+                        logger.error(f"Failed to send message to {chat_id}: {response.status}, {await response.text()}")
         except Exception as e:
-            logger.error(f"Error sending message: {e}")
+            logger.error(f"Error sending message to {chat_id}: {e}")
 
 async def send_location_async(bot_token, chat_id, latitude, longitude, semaphore):
     async with semaphore:
@@ -58,8 +55,7 @@ async def send_location_async(bot_token, chat_id, latitude, longitude, semaphore
             "longitude": longitude,
         }
         debug_url = f"{url}?chat_id={chat_id}&latitude={latitude}&longitude={longitude}"
-        logger.debug(f"Token: {bot_token}")
-        logger.debug(f"Chat ID: {chat_id}")
+        logger.debug(f"Sending location to Chat ID {chat_id}")
         logger.debug(f"Command: {debug_url}")
 
         try:
@@ -68,9 +64,9 @@ async def send_location_async(bot_token, chat_id, latitude, longitude, semaphore
                     if response.status == 200:
                         logger.info(f"Location sent to {chat_id} (lat: {latitude}, lon: {longitude})")
                     else:
-                        logger.error(f"Failed to send location: {response.status}, {await response.text()}")
+                        logger.error(f"Failed to send location to {chat_id}: {response.status}, {await response.text()}")
         except Exception as e:
-            logger.error(f"Error sending location: {e}")
+            logger.error(f"Error sending location to {chat_id}: {e}")
 
 async def fetch_json(session, url, headers, retries=3):
     for attempt in range(1, retries + 1):
@@ -80,13 +76,13 @@ async def fetch_json(session, url, headers, retries=3):
                     logger.warning(f"Attempt {attempt}: Received status code {response.status} for URL: {url}")
                     continue
                 return await response.json()
-        except (ClientError, asyncio.TimeoutError) as e:
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
             logger.warning(f"Attempt {attempt}: Error fetching {url}: {e}")
         await asyncio.sleep(2)  # Wait before retrying
     logger.error(f"Failed to fetch {url} after {retries} attempts")
     return None
 
-async def process_feed_items(data, unique_date_added, neighborhood, bot_token, chat_id_User, session):
+async def process_feed_items(data, unique_date_added, neighborhood, bot_token, chat_ids, session):
     count = 0
     for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
         try:
@@ -97,7 +93,7 @@ async def process_feed_items(data, unique_date_added, neighborhood, bot_token, c
             continue
     return count
 
-async def handle_new_properties(data, unique_date_added, neighborhood, bot_token, chat_id_User, session, semaphore):
+async def handle_new_properties(data, unique_date_added, neighborhood, bot_token, chat_ids, session, semaphore):
     for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
         try:
             neighborhood_name = d.get('neighborhood', 'Unknown Neighborhood')
@@ -114,16 +110,28 @@ async def handle_new_properties(data, unique_date_added, neighborhood, bot_token
             if date_added and date_added not in unique_date_added:
                 unique_date_added.add(date_added)
                 message = f'*כתובת*: {Address}, *מחיר*: {price}. *פרטים נוספים*: {details}. [קישור למודעה]({Addid})'
-                await send_message_async(bot_token, chat_id_User, message, semaphore)
+                
+                # Create tasks to send message to all chat_ids
+                message_tasks = [
+                    asyncio.create_task(send_message_async(bot_token, chat_id, message, semaphore))
+                    for chat_id in chat_ids
+                ]
+                await asyncio.gather(*message_tasks, return_exceptions=True)
 
                 latitude = d.get('coordinates', {}).get('latitude', 0)
                 longitude = d.get('coordinates', {}).get('longitude', 0)
-                await send_location_async(bot_token, chat_id_User, latitude, longitude, semaphore)
+                
+                # Create tasks to send location to all chat_ids
+                location_tasks = [
+                    asyncio.create_task(send_location_async(bot_token, chat_id, latitude, longitude, semaphore))
+                    for chat_id in chat_ids
+                ]
+                await asyncio.gather(*location_tasks, return_exceptions=True)
 
         except Exception as e:
             logger.error(f"Error processing feed item: {e}")
 
-async def main_task(params, neighborhood, bot_token, chat_id_User, session, headers, semaphore):
+async def main_task(params, neighborhood, bot_token, chat_ids, session, headers, semaphore):
     TotalCheck = False
     json_file_path = 'unique_date_added.json'
     try:
@@ -151,20 +159,24 @@ async def main_task(params, neighborhood, bot_token, chat_id_User, session, head
 
         if response_json:
             # First pass: Count new apartments
-            new_count = await process_feed_items(response_json, unique_date_added, neighborhood, bot_token, chat_id_User, session)
+            new_count = await process_feed_items(response_json, unique_date_added, neighborhood, bot_token, chat_ids, session)
             count += new_count
             if new_count > 0:
                 TotalCheck = True
                 logger.info(f"Found {new_count} new apartments in {neighborhood}")
 
             # Second pass: Handle new properties
-            await handle_new_properties(response_json, unique_date_added, neighborhood, bot_token, chat_id_User, session, semaphore)
+            await handle_new_properties(response_json, unique_date_added, neighborhood, bot_token, chat_ids, session, semaphore)
         else:
             logger.error(f"Request failed for neighborhood {neighborhood} with URL: {final_url}")
 
     if count > 0:
-        message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
-        await send_message_async(bot_token, chat_id_User, message, semaphore)
+        summary_message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
+        summary_tasks = [
+            asyncio.create_task(send_message_async(bot_token, chat_id, summary_message, semaphore))
+            for chat_id in chat_ids
+        ]
+        await asyncio.gather(*summary_tasks, return_exceptions=True)
 
     # Save the updated unique_date_added to the JSON file
     try:
@@ -183,16 +195,27 @@ async def run_bot():
         logger.error("TELEGRAM_BOT_TOKEN environment variable not set.")
         return
 
-    try:
-        chat_id_User = int(os.getenv('CHAT_ID_USER'))
-    except (TypeError, ValueError):
-        logger.error("CHAT_ID_USER must be set as an environment variable and must be an integer.")
+    # Collect all CHAT_ID_* variables (including CHAT_ID_USER)
+    chat_id_dict = {}  # Dictionary to store name: chat_id pairs
+    for key, value in os.environ.items():
+        if key.startswith('CHAT_ID_'):
+            name = key[len('CHAT_ID_'):]  # Extract the name after 'CHAT_ID_'
+            try:
+                chat_id = int(value)
+                chat_id_dict[name] = chat_id
+            except ValueError:
+                logger.error(f"Invalid CHAT_ID value for {key}: {value}")
+
+    if not chat_id_dict:
+        logger.error("No CHAT_ID_* variables found in .env file.")
         return
 
-    # Debug print for bot token and chat ID
-    logger.debug(f"Loaded bot token: {bot_token}")
-    logger.debug(f"Loaded chat ID: {chat_id_User}")
+    # Log the collected chat_ids with their names
+    recipient_names = ', '.join(chat_id_dict.keys())
+    logger.info(f"SEND TO: {recipient_names}")
 
+    # Extract chat_ids for further processing
+    chat_ids = list(chat_id_dict.values())
 
     # Define property search parameters for different neighborhoods
     neighborhoods_params = [
@@ -243,7 +266,7 @@ async def run_bot():
         'sec-ch-ua-platform': 'Windows',
     }
 
-    timeout = ClientTimeout(total=60)  # 60 seconds timeout
+    timeout = aiohttp.ClientTimeout(total=60)  # 60 seconds timeout
     data_connector = aiohttp.TCPConnector(limit=50)  # Adjust as needed
     async with aiohttp.ClientSession(connector=data_connector, timeout=timeout) as data_session:
         try:
@@ -254,7 +277,7 @@ async def run_bot():
                         params=params,
                         neighborhood=params['name'],
                         bot_token=bot_token,
-                        chat_id_User=chat_id_User,
+                        chat_ids=chat_ids,
                         session=data_session,
                         headers=headers,
                         semaphore=semaphore

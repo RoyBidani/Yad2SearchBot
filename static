@@ -1,0 +1,442 @@
+import os
+import json
+import logging
+import sqlite3
+from aiogram import Bot, Dispatcher, executor, types
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
+from aiogram.dispatcher import FSMContext
+from aiogram.dispatcher.filters.state import State, StatesGroup
+from dotenv import load_dotenv
+import aiohttp
+import asyncio
+from urllib.parse import urlencode
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+
+# Load environment variables
+load_dotenv()
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Initialize bot and dispatcher
+BOT_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+if not BOT_TOKEN:
+    logger.error("TELEGRAM_BOT_TOKEN not set in .env file.")
+    exit(1)
+
+bot = Bot(token=BOT_TOKEN)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
+
+# Define a global semaphore to limit concurrent send operations
+SEMAPHORE_LIMIT = 5  # Adjust based on testing
+semaphore = asyncio.Semaphore(SEMAPHORE_LIMIT)  # Global semaphore
+
+# Database functions
+def init_db():
+    conn = sqlite3.connect('preferences.db')
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS user_preferences (
+            user_id INTEGER PRIMARY KEY,
+            area TEXT,
+            neighborhood TEXT,
+            rooms TEXT,
+            price TEXT,
+            search_params TEXT,
+            unique_date_added TEXT
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
+def save_preferences(user_id, area, neighborhood, rooms, price, search_params):
+    conn = sqlite3.connect('preferences.db')
+    cursor = conn.cursor()
+    # Fetch existing unique_date_added
+    cursor.execute('SELECT unique_date_added FROM user_preferences WHERE user_id = ?', (user_id,))
+    row = cursor.fetchone()
+    if row and row[0]:
+        unique_date_added = json.loads(row[0])
+    else:
+        unique_date_added = []
+
+    cursor.execute('''
+        INSERT OR REPLACE INTO user_preferences (user_id, area, neighborhood, rooms, price, search_params, unique_date_added)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    ''', (user_id, area, neighborhood, rooms, price, json.dumps(search_params), json.dumps(unique_date_added)))
+    conn.commit()
+    conn.close()
+
+def load_user_preferences():
+    conn = sqlite3.connect('preferences.db')
+    cursor = conn.cursor()
+    cursor.execute('SELECT user_id, search_params, unique_date_added FROM user_preferences')
+    rows = cursor.fetchall()
+    conn.close()
+    preferences = []
+    for row in rows:
+        user_id = row[0]
+        search_params = json.loads(row[1]) if row[1] else {}
+        unique_date_added = set(json.loads(row[2])) if row[2] else set()
+        preferences.append((user_id, search_params, unique_date_added))
+    return preferences
+
+# Define States
+class Form(StatesGroup):
+    waiting_for_area = State()
+    waiting_for_neighborhood = State()
+    waiting_for_rooms = State()
+    waiting_for_price = State()
+
+# Helper function
+def get_neighborhood_id(neighborhood_name):
+    mapping = {
+        "נחלת יצחק": 317,
+        "מונטיפיורי": 485,
+        "צפון ישן": 204,
+        "בבלי": 1518,
+        "הדר המערבי": 1234,  # Example ID
+        "גני רמת גן": 5678,  # Example ID
+        "בורכוב": 355,
+        "הלה": 991510,
+        "ארלוזורוב": 1642,
+        "גבעת רמבם": 1643,
+        "קריית יוסף": 1644,
+        # Add other neighborhoods as needed
+    }
+    return mapping.get(neighborhood_name, 0)
+
+# Start command
+@dp.message_handler(commands='start')
+async def cmd_start(message: types.Message):
+    await message.reply(
+        "שלום! אני הבוט שלך לחיפוש דירות. לחץ על /set_area כדי להתחיל."
+    )
+
+# Set area command
+@dp.message_handler(commands='set_area')
+async def cmd_set_area(message: types.Message):
+    areas = ["תל אביב", "רמת גן", "גבעתיים", "תל אביב-יפו"]
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    for area in areas:
+        keyboard.add(area)
+    
+    await Form.waiting_for_area.set()
+    await message.reply("בחר/י אזור לחיפוש:", reply_markup=keyboard)
+
+# Handle area selection
+@dp.message_handler(state=Form.waiting_for_area)
+async def process_area(message: types.Message, state: FSMContext):
+    selected_area = message.text
+    area_neighborhoods = {
+        "תל אביב": ["נחלת יצחק", "מונטיפיורי", "צפון ישן", "בבלי"],
+        "רמת גן": ["הדר המערבי", "גני רמת גן"],
+        "גבעתיים": ["בורכוב", "הלה", "ארלוזורוב", "גבעת רמבם", "קריית יוסף"],
+        "תל אביב-יפו": ["מונטיפיורי", "צפון ישן", "בבלי"]
+    }
+    
+    neighborhoods = area_neighborhoods.get(selected_area, [])
+    if not neighborhoods:
+        await message.reply("האזור הנבחר אינו קיים. אנא נסה שוב.", reply_markup=types.ReplyKeyboardRemove())
+        await state.finish()
+        return
+    
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for neighborhood in neighborhoods:
+        keyboard.add(neighborhood)
+    
+    await state.update_data(area=selected_area)
+    await Form.waiting_for_neighborhood.set()
+    await message.reply("בחר/י שכונה:", reply_markup=keyboard)
+
+# Handle neighborhood selection
+@dp.message_handler(state=Form.waiting_for_neighborhood)
+async def process_neighborhood(message: types.Message, state: FSMContext):
+    selected_neighborhood = message.text
+    await state.update_data(neighborhood=selected_neighborhood)
+    
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add("2.5-4 חדרים", "1-2 חדרים", "4+ חדרים")
+    
+    await Form.waiting_for_rooms.set()
+    await message.reply("בחר/י טווח חדרים:", reply_markup=keyboard)
+
+# Handle rooms selection
+@dp.message_handler(state=Form.waiting_for_rooms)
+async def process_rooms(message: types.Message, state: FSMContext):
+    selected_rooms = message.text
+    await state.update_data(rooms=selected_rooms)
+    
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add("0-7000 ש\"ח", "7001-15000 ש\"ח", "15001+ ש\"ח")
+    
+    await Form.waiting_for_price.set()
+    await message.reply("בחר/י טווח מחיר:", reply_markup=keyboard)
+
+# Handle price selection and save preferences
+@dp.message_handler(state=Form.waiting_for_price)
+async def process_price(message: types.Message, state: FSMContext):
+    selected_price = message.text
+    user_data = await state.get_data()
+    
+    area = user_data.get('area')
+    neighborhood = user_data.get('neighborhood')
+    rooms = user_data.get('rooms')
+    price = selected_price
+    
+    rooms_range = {
+        "2.5-4 חדרים": "2.5-4",
+        "1-2 חדרים": "1-2",
+        "4+ חדרים": "4-",
+    }.get(rooms, "2.5-4")
+    
+    price_range = {
+        "0-7000 ש\"ח": "0-7000",
+        "7001-15000 ש\"ח": "7001-15000",
+        "15001+ ש\"ח": "15001-",
+    }.get(price, "0-7000")
+    
+    search_params = {
+        'name': neighborhood,
+        'topArea': 2,  # Example value
+        'area': 3,      # Example value
+        'city': 5000,   # Replace based on area or make dynamic
+        'rooms': rooms_range,
+        'price': price_range,
+        'balcony': 1,
+        'neighborhood': get_neighborhood_id(neighborhood),
+        'squaremeter': '65--1',
+        'forceLdLoad': True
+    }
+    
+    user_id = message.from_user.id
+    try:
+        save_preferences(user_id, area, neighborhood, rooms, price, search_params)
+        await message.reply("ההעדפות שלך נשמרו בהצלחה!", reply_markup=types.ReplyKeyboardRemove())
+    except Exception as e:
+        logger.error(f"Error saving preferences: {e}")
+        await message.reply("אירעה שגיאה בשמירת ההעדפות. אנא נסה שוב.", reply_markup=types.ReplyKeyboardRemove())
+    
+    await state.finish()
+
+# Asynchronous functions to send messages and locations
+async def send_message_async(bot_token, chat_id, message_text, semaphore):
+    async with semaphore:
+        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+        params = {
+            "chat_id": chat_id,
+            "text": message_text,
+            "parse_mode": "Markdown",
+        }
+        debug_url = f"{url}?chat_id={chat_id}&text={message_text}"
+        logger.debug(f"Token: {bot_token}")
+        logger.debug(f"Chat ID: {chat_id}")
+        logger.debug(f"Command: {debug_url}")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, params=params) as response:
+                    if response.status == 200:
+                        logger.info(f"Message sent to {chat_id}: {message_text}")
+                    else:
+                        logger.error(f"Failed to send message: {response.status}, {await response.text()}")
+        except Exception as e:
+            logger.error(f"Error sending message: {e}")
+
+async def send_location_async(bot_token, chat_id, latitude, longitude, semaphore):
+    async with semaphore:
+        url = f"https://api.telegram.org/bot{bot_token}/sendLocation"
+        params = {
+            "chat_id": chat_id,
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+        debug_url = f"{url}?chat_id={chat_id}&latitude={latitude}&longitude={longitude}"
+        logger.debug(f"Token: {bot_token}")
+        logger.debug(f"Chat ID: {chat_id}")
+        logger.debug(f"Command: {debug_url}")
+
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, params=params) as response:
+                    if response.status == 200:
+                        logger.info(f"Location sent to {chat_id} (lat: {latitude}, lon: {longitude})")
+                    else:
+                        logger.error(f"Failed to send location: {response.status}, {await response.text()}")
+        except Exception as e:
+            logger.error(f"Error sending location: {e}")
+
+# Fetch JSON with retries
+async def fetch_json(session, url, headers, retries=3):
+    for attempt in range(1, retries + 1):
+        try:
+            async with session.get(url, headers=headers) as response:
+                if response.status != 200:
+                    logger.warning(f"Attempt {attempt}: Received status code {response.status} for URL: {url}")
+                    continue
+                return await response.json()
+        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
+            logger.warning(f"Attempt {attempt}: Error fetching {url}: {e}")
+        await asyncio.sleep(2)  # Wait before retrying
+    logger.error(f"Failed to fetch {url} after {retries} attempts")
+    return None
+
+# Process feed items to count new apartments
+async def process_feed_items(data, unique_date_added, neighborhood, bot_token, chat_id_User, session):
+    count = 0
+    for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
+        try:
+            date_added = d['date_added']
+            if date_added not in unique_date_added and d.get('feed_source') == "private":
+                count += 1
+        except (KeyError, ValueError):
+            continue
+    return count
+
+# Handle new properties by sending messages and locations
+async def handle_new_properties(data, unique_date_added, neighborhood, bot_token, chat_id_User, session, semaphore):
+    for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
+        try:
+            neighborhood_name = d.get('neighborhood', 'Unknown Neighborhood')
+            if d.get('feed_source') != "private":
+                continue
+
+            Address = d.get('title_1', 'No Address')
+            price = d.get('price', 'No Price')
+            row_3 = d.get('row_3', ['No Detail 1', 'No Detail 2', 'No Detail 3'])
+            details = ", ".join(row_3[:3])
+            date_added = d.get('date_added')
+            Addid = f"https://www.yad2.co.il/item/{d.get('id', '')}"
+
+            if date_added and date_added not in unique_date_added:
+                unique_date_added.add(date_added)
+                message = f'*כתובת*: {Address}, *מחיר*: {price}. *פרטים נוספים*: {details}. [קישור למודעה]({Addid})'
+                await send_message_async(bot_token, chat_id_User, message, semaphore)
+
+                latitude = d.get('coordinates', {}).get('latitude', 0)
+                longitude = d.get('coordinates', {}).get('longitude', 0)
+                await send_location_async(bot_token, chat_id_User, latitude, longitude, semaphore)
+
+        except Exception as e:
+            logger.error(f"Error processing feed item: {e}")
+
+# Main task for each user
+async def main_task(user_id, params, neighborhood, bot_token, chat_id_User, session, headers, semaphore, unique_date_added):
+    TotalCheck = False
+    count = 0
+    base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
+
+    for i in range(1):  # Adjust the range as needed for pagination
+        params['page'] = i
+        filtered_params = {key: value for key, value in params.items() if key != 'name'}
+        encoded_params = urlencode(filtered_params)
+        final_url = f"{base_url}?{encoded_params}"
+
+        await asyncio.sleep(1)  # Non-blocking sleep
+        logger.debug(f"Fetching URL: {final_url}")
+        response_json = await fetch_json(session, final_url, headers)
+
+        if response_json:
+            # First pass: Count new apartments
+            new_count = await process_feed_items(response_json, unique_date_added, neighborhood, bot_token, chat_id_User, session)
+            count += new_count
+            if new_count > 0:
+                TotalCheck = True
+                logger.info(f"Found {new_count} new apartments in {neighborhood}")
+
+            # Second pass: Handle new properties
+            await handle_new_properties(response_json, unique_date_added, neighborhood, bot_token, chat_id_User, session, semaphore)
+
+            # Save updated unique_date_added back to the database
+            try:
+                conn = sqlite3.connect('preferences.db')
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE user_preferences
+                    SET unique_date_added = ?
+                    WHERE user_id = ?
+                ''', (json.dumps(list(unique_date_added)), user_id))
+                conn.commit()
+                conn.close()
+                logger.debug(f"Updated unique_date_added for user {user_id}")
+            except Exception as e:
+                logger.error(f"Failed to update unique_date_added for user {user_id}: {e}")
+        else:
+            logger.error(f"Request failed for neighborhood {neighborhood} with URL: {final_url}")
+
+    if count > 0:
+        message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
+        await send_message_async(bot_token, chat_id_User, message, semaphore)
+
+    return TotalCheck
+
+# Modify run_bot to use user preferences
+async def run_bot():
+    bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
+    if not bot_token:
+        logger.error("TELEGRAM_BOT_TOKEN environment variable not set.")
+        return
+
+    preferences = load_user_preferences()
+    if not preferences:
+        logger.info("No user preferences found. Exiting.")
+        return
+
+    headers = {
+        'Accept': 'application/json, text/plain, */*',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+        'Cookie': '__ssds=3; __ssuzjsr3=a9be0cd8e; __uzmaj3=2482bab2-e643-4981-b19f-ca5d3afc7132; __uzmbj3=1687852959; __uzmlj3=PyqZE7dcY4wB1d0cwdis7E=; y2018-2-cohort=87; leadSaleRentFree=82; __uzmb=1687852961; __uzma=1489c434-41b7-4cb2-ba68-54014c40ede2; __uzme=7900; guest_token=eyJhbGciOiJIUz3ZS04ZWQ0LTQ4NDItOTE3YS0zjoxNjg3ODUyOTYxLCJleHAiOjE3MjEwNzY4MTQ4MDN9.15-hRYa5G_B7ASy6lrVllacDfAG8zz08c_riM57i1vs; abTestKey=79; use_elastic_search=1; canary=never; __uzmcj3=105419468535; __uzmdj3=1690528114; __uzmfj3=7; server_env=production; y2_cohort_2020=8; favorites_userid=edd1063272547; __uzmd=; __uzmc=763',
+        'Origin': 'https://www.yad2.co.il',
+        'Pragma': 'no-cache',
+        'Referer': 'https://www.yad2.co.il/',
+        'Sec-Fetch-Dest': 'empty',
+        'Sec-Fetch-Mode': 'cors',
+        'Sec-Fetch-Site': 'same-site',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/115.0.0.0 Safari/537.36',
+        'mainsite_version_commit': '7c9a9c5c1fe45ec28c16bc473d25aad7141f53bd',
+        'mobile-app': 'false',
+        'sec-ch-ua': 'Not/A)Brand";v="99", "Google Chrome";v="115", "Chromium";v="115"',
+        'sec-ch-ua-mobile': '?0',
+        'sec-ch-ua-platform': 'Windows',
+    }
+
+    timeout = aiohttp.ClientTimeout(total=60)
+    data_connector = aiohttp.TCPConnector(limit=50)
+    async with aiohttp.ClientSession(connector=data_connector, timeout=timeout) as data_session:
+        try:
+            tasks = []
+            for user_id, params, unique_date_added in preferences:
+                neighborhood = params['name']
+                task = asyncio.create_task(
+                    main_task(
+                        user_id=user_id,
+                        params=params,
+                        neighborhood=neighborhood,
+                        bot_token=bot_token,
+                        chat_id_User=user_id,  # Use user_id as chat_id
+                        session=data_session,
+                        headers=headers,
+                        semaphore=semaphore,
+                        unique_date_added=unique_date_added
+                    )
+                )
+                tasks.append(task)
+
+            await asyncio.gather(*tasks, return_exceptions=True)
+        except Exception as e:
+            logger.error(f"An unexpected error occurred: {e}")
+
+# Scheduler setup with APScheduler
+async def periodic_task():
+    await run_bot()
+
+if __name__ == "__main__":
+    init_db()
+    scheduler = AsyncIOScheduler()
+    scheduler.add_job(periodic_task, 'interval', hours=1)  # Adjust as needed
+    scheduler.start()
+    executor.start_polling(dp, skip_updates=True)
