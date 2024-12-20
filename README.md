@@ -1,14 +1,4 @@
-Apologies for the confusion earlier. After reviewing the provided files, it seems that `unique_date_added.json` was mentioned in the `README.md` but isn't actually present in the uploaded files, nor can I see a direct implementation for it in the available code. Let me rebuild the `README.md` based on the actual files that exist, including a more accurate description of the project's functionality.
 
-I'll analyze the files you've uploaded (`main.py`, `test_bot.py`, `requirements.txt`, `neighborhoods.json`, and the existing `README.md`) to make sure the content reflects the current state of your project.
-
-Let me regenerate the `README.md` for you.
-
----
-
-### Here is the detailed `README.md` based on the current files:
-
-```markdown
 # Yad2 Apartment Notifier Bot
 
 This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and sends notifications via Telegram about new listings that meet specific criteria, such as neighborhood, price, and apartment details. 
