@@ -185,7 +185,7 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
     base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
 
     page = starting_page  # Start with the stored page
-    max_pages = 100 if is_first_run else float('inf')  # Limit to 100 pages on the first run
+    max_pages = 10
 
     while page <= max_pages:
         params['page'] = page
