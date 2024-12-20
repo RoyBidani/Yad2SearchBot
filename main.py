@@ -148,9 +148,14 @@ def load_neighborhoods(file_path):
         logger.error(f"Unexpected error loading neighborhoods from {file_path}: {e}")
         return []
 
+import os
+import json
+from urllib.parse import urlencode
+
 async def main_task(params, neighborhood, bot_token, chat_ids, session, headers, semaphore):
-    TotalCheck = False
     json_file_path = 'unique_links.json'
+    page_state_file_path = 'page_state.json'
+
     try:
         if os.path.exists(json_file_path):
             with open(json_file_path, 'r', encoding='utf-8') as json_file:
@@ -161,39 +166,51 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
         logger.error(f"Error reading {json_file_path}: {e}")
         unique_links = set()
 
+    # Load or initialize page state
+    try:
+        if os.path.exists(page_state_file_path):
+            with open(page_state_file_path, 'r', encoding='utf-8') as state_file:
+                page_state = json.load(state_file)
+        else:
+            page_state = {}
+    except Exception as e:
+        logger.error(f"Error reading {page_state_file_path}: {e}")
+        page_state = {}
+
+    search_key = str(params)  # Use the params as a key to identify each search
+    starting_page = page_state.get(search_key, 1)
+    is_first_run = starting_page == 1
+
     count = 0
     base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
 
-    for i in range(5):  # Adjust the range as needed for pagination
-        params['page'] = i
+    page = starting_page  # Start with the stored page
+    max_pages = 100 if is_first_run else float('inf')  # Limit to 100 pages on the first run
+
+    while page <= max_pages:
+        params['page'] = page
         filtered_params = {key: value for key, value in params.items() if key != 'name'}
         encoded_params = urlencode(filtered_params)
         final_url = f"{base_url}?{encoded_params}"
 
-        await asyncio.sleep(1)  # Non-blocking sleep
         logger.debug(f"Fetching URL: {final_url}")
         response_json = await fetch_json(session, final_url, headers)
 
-        if response_json:
-            # First pass: Count new apartments
+        if response_json and 'feed_items' in response_json.get('data', {}).get('feed', {}):
+            # Process feed items
             new_count = await process_feed_items(response_json, unique_links, neighborhood, bot_token, chat_ids, session)
             count += new_count
-            if new_count > 0:
-                TotalCheck = True
-                logger.info(f"Found {new_count} new apartments in {neighborhood}")
-
-            # Second pass: Handle new properties
             await handle_new_properties(response_json, unique_links, neighborhood, bot_token, chat_ids, session, semaphore)
-        else:
-            logger.error(f"Request failed for neighborhood {neighborhood} with URL: {final_url}")
 
-    # if count > 0:
-    #     summary_message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
-    #     summary_tasks = [
-    #         asyncio.create_task(send_message_async(bot_token, chat_id, summary_message, semaphore))
-    #         for chat_id in chat_ids
-    #     ]
-    #     await asyncio.gather(*summary_tasks, return_exceptions=True)
+            # Stop if no new results are found
+            if not response_json['data']['feed']['feed_items']:
+                logger.info(f"No more results found on page {page}. Stopping pagination.")
+                break
+
+            page += 1  # Go to the next page
+        else:
+            logger.info(f"No data found or request failed for page {page}. Stopping pagination.")
+            break
 
     # Save the updated unique_links to the JSON file
     try:
@@ -203,7 +220,25 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
     except Exception as e:
         logger.error(f"Failed to save unique_links: {e}")
 
-    return TotalCheck
+    # Update and save the page state
+    page_state[search_key] = page
+    try:
+        with open(page_state_file_path, 'w', encoding='utf-8') as state_file:
+            json.dump(page_state, state_file, ensure_ascii=False, indent=4)
+            logger.debug(f"Saved page_state to {page_state_file_path}")
+    except Exception as e:
+        logger.error(f"Failed to save page_state: {e}")
+    # if count > 0:
+    #     summary_message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
+    #     summary_tasks = [
+    #         asyncio.create_task(send_message_async(bot_token, chat_id, summary_message, semaphore))
+    #         for chat_id in chat_ids
+    #     ]
+    #     await asyncio.gather(*summary_tasks, return_exceptions=True)
+
+    # Save the updated unique_links to the JSON file
+    return count > 0
+
 
 async def run_bot(neighborhoods_file):
     # Load sensitive information from environment variables
