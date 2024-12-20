@@ -42,7 +42,7 @@ jobs:
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         CHAT_ID_USER: ${{ secrets.CHAT_ID_USER }}
-        # Add other chat IDs as secrets in GitHub
+        CHAT_ID_YOTAM: ${{ secrets.CHAT_ID_YOTAM }}
       run: |
         source venv/bin/activate
         python main.py --neighborhoods neighborhoods.json
