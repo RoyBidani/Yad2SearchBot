@@ -47,27 +47,27 @@ async def send_message_async(bot_token, chat_id, message_text, semaphore):
         except Exception as e:
             logger.error(f"Error sending message to {chat_id}: {e}")
 
-async def send_location_async(bot_token, chat_id, latitude, longitude, semaphore):
-    async with semaphore:
-        url = f"https://api.telegram.org/bot{bot_token}/sendLocation"
-        params = {
-            "chat_id": chat_id,
-            "latitude": latitude,
-            "longitude": longitude,
-        }
-        debug_url = f"{url}?chat_id={chat_id}&latitude={latitude}&longitude={longitude}"
-        logger.debug(f"Sending location to Chat ID {chat_id}")
-        logger.debug(f"Command: {debug_url}")
+# async def send_location_async(bot_token, chat_id, latitude, longitude, semaphore):
+#     async with semaphore:
+#         url = f"https://api.telegram.org/bot{bot_token}/sendLocation"
+#         params = {
+#             "chat_id": chat_id,
+#             "latitude": latitude,
+#             "longitude": longitude,
+#         }
+#         debug_url = f"{url}?chat_id={chat_id}&latitude={latitude}&longitude={longitude}"
+#         logger.debug(f"Sending location to Chat ID {chat_id}")
+#         logger.debug(f"Command: {debug_url}")
 
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, params=params) as response:
-                    if response.status == 200:
-                        logger.info(f"Location sent to {chat_id} (lat: {latitude}, lon: {longitude})")
-                    else:
-                        logger.error(f"Failed to send location to {chat_id}: {response.status}, {await response.text()}")
-        except Exception as e:
-            logger.error(f"Error sending location to {chat_id}: {e}")
+#         try:
+#             async with aiohttp.ClientSession() as session:
+#                 async with session.post(url, params=params) as response:
+#                     if response.status == 200:
+#                         logger.info(f"Location sent to {chat_id} (lat: {latitude}, lon: {longitude})")
+#                     else:
+#                         logger.error(f"Failed to send location to {chat_id}: {response.status}, {await response.text()}")
+#         except Exception as e:
+#             logger.error(f"Error sending location to {chat_id}: {e}")
 
 async def fetch_json(session, url, headers, retries=3):
     for attempt in range(1, retries + 1):
@@ -164,7 +164,7 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
     count = 0
     base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
 
-    for i in range(1):  # Adjust the range as needed for pagination
+    for i in range(5):  # Adjust the range as needed for pagination
         params['page'] = i
         filtered_params = {key: value for key, value in params.items() if key != 'name'}
         encoded_params = urlencode(filtered_params)
@@ -187,13 +187,13 @@ async def main_task(params, neighborhood, bot_token, chat_ids, session, headers,
         else:
             logger.error(f"Request failed for neighborhood {neighborhood} with URL: {final_url}")
 
-    if count > 0:
-        summary_message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
-        summary_tasks = [
-            asyncio.create_task(send_message_async(bot_token, chat_id, summary_message, semaphore))
-            for chat_id in chat_ids
-        ]
-        await asyncio.gather(*summary_tasks, return_exceptions=True)
+    # if count > 0:
+    #     summary_message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
+    #     summary_tasks = [
+    #         asyncio.create_task(send_message_async(bot_token, chat_id, summary_message, semaphore))
+    #         for chat_id in chat_ids
+    #     ]
+    #     await asyncio.gather(*summary_tasks, return_exceptions=True)
 
     # Save the updated unique_links to the JSON file
     try:
