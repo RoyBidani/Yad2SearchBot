@@ -23,14 +23,7 @@ jobs:
         source venv/bin/activate
         pip install -r requirements.txt
 
-    # Download the previous unique_date_added.json artifact (if it exists)
-    - name: Download Previous Data
-      id: download-artifact
-      uses: actions/download-artifact@v3
-      with:
-        name: unique_date_added
-        path: .
-
+    # Check if unique_date_added.json exists or create a new one
     - name: Check for Existing Data
       run: |
         if [ ! -f unique_date_added.json ]; then
@@ -47,9 +40,11 @@ jobs:
         source venv/bin/activate
         python main.py --neighborhoods neighborhoods.json
 
-    # Upload the updated unique_date_added.json file as an artifact
-    - name: Upload Updated Data
-      uses: actions/upload-artifact@v3
-      with:
-        name: unique_date_added
-        path: unique_date_added.json
+    # Commit and push updated unique_date_added.json back to the repository
+    - name: Commit unique_date_added.json to the repository
+      run: |
+        git config --global user.name "GitHub Actions"
+        git config --global user.email "actions@github.com"
+        git add unique_date_added.json
+        git commit -m "Update unique_date_added.json after bot run"
+        git push origin main
