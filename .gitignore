@@ -13,7 +13,7 @@ __pycache__/
 .env
 
 # Ignore JSON data files (temporary or runtime-specific)
-*.json
+#*.json
 
 # Ignore IDE-specific files
 .vscode/
