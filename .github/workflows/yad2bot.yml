@@ -22,12 +22,12 @@ jobs:
         source venv/bin/activate
         pip install -r requirements.txt
 
-    # Check if unique_links.json exists or create a new one
+    # Check if sent_posts.json exists or create a new one
     - name: Check for Existing Data
       run: |
-        if [ ! -f unique_links.json ]; then
-          echo "unique_links.json not found, creating a new file."
-          echo "[]" > unique_links.json
+        if [ ! -f sent_posts.json ]; then
+          echo "sent_posts.json not found, creating a new file."
+          echo "[]" > sent_posts.json
         fi
 
     - name: Run Yad2 Bot
@@ -39,12 +39,12 @@ jobs:
         source venv/bin/activate
         python main.py --neighborhoods neighborhoods.json
 
-    - name: Commit unique_links.json to the repository
+    - name: Commit sent_posts.json to the repository
       env:
         PAT_TOKEN: ${{ secrets.PAT_TOKEN }}
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
-        git add unique_links.json
-        git commit -m "Update unique_links.json after bot run" || echo "No changes to commit"
+        git add sent_posts.json
+        git commit -m "Update sent_posts.json after bot run" || echo "No changes to commit"
         git push https://x-access-token:${PAT_TOKEN}@github.com/RoyBidani/Yad2SearchBot.git main

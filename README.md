@@ -1,16 +1,15 @@
-
 # Yad2 Apartment Notifier Bot
 
-This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and sends notifications via Telegram about new listings that meet specific criteria, such as neighborhood, price, and apartment details. 
+This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) and sends notifications via Telegram about new listings that meet specific criteria, such as neighborhood, price, and apartment details.
 
 ---
 
 ## Features
 
 - Monitors listings for apartments in predefined neighborhoods.
-- Sends notifications including address, price, details, and link to the listing.
+- Sends notifications including address, price, details, and a link to the listing.
 - Supports multi-user notifications via Telegram.
-- Customizable search parameters via `neighborhoods.json` file.
+- Customizable search parameters via the `neighborhoods.json` file.
 
 ---
 
@@ -21,10 +20,12 @@ This project monitors real estate listings on [Yad2](https://www.yad2.co.il/) an
 - **Python 3.8+**
 - Installed dependencies from `requirements.txt`:
   - `aiohttp`
-  - `python-dotenv`
   - `python-telegram-bot`
+  - `python-dotenv`
   - `aiogram`
   - `apscheduler`
+  - `aiofiles`
+  - `aiolimiter`
 
 To install the dependencies, run:
 
@@ -34,7 +35,7 @@ pip install -r requirements.txt
 
 ---
 
-## Setup Instructions
+## Installation and Setup
 
 ### 1. Clone the Repository
 
@@ -67,8 +68,6 @@ CHAT_ID_NAME2=<another-chat-id>
 - Replace `<your-telegram-bot-token>` with your bot token.
 - Add multiple `CHAT_ID_*` variables for each user who will receive notifications.
 
----
-
 ### 4. Create the `neighborhoods.json` File
 
 Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An example structure:
@@ -76,40 +75,38 @@ Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An 
 ```json
 [
     {
-        "name": "החרוזית רמת גן",
+        "name": "החרוזים רמת גן",
         "topArea": 2,
         "area": 3,
         "city": 8600,
         "rooms": "3-5",
-        "price": "0-7000",
+        "price": "4000-7000",
         "balcony": 1,
         "neighborhood": 327,
-        "squaremeter": "120--1",
-        "forceLdLoad": true
-    },
-    {
-        "name": "רמת גן בורסה",
-        "topArea": 2,
-        "area": 3,
-        "city": 8600,
-        "rooms": "3-5",
-        "price": "0-7000",
-        "balcony": 1,
-        "neighborhood": 653,
-        "squaremeter": "120--1",
-        "forceLdLoad": true
+        "max_pages": 10,
+        "forceLdLoad": 1
     }
 ]
 ```
 
 - Save the file as `neighborhoods.json` in the same directory as the script.
-- Fields such as `rooms`, `price`, and `squaremeter` are customizable to your criteria.
+- Fields such as `rooms`, `price`, and `max_pages` are customizable to your criteria.
+
+### 5. Test the Telegram Bot
+
+Use `test_bot.py` to verify your Telegram integration:
+
+```bash
+python test_bot.py
+```
+
+This script sends a test message to the specified chat ID to confirm that the bot is working correctly.
 
 ---
 
-## How to Create a Telegram Bot and Obtain Token/Chat IDs
+## How to Create and Connect a Telegram Bot
 
-### 1. Create a Telegram Bot
+### Step 1: Create a Telegram Bot
 
 1. Open Telegram and search for [@BotFather](https://core.telegram.org/bots#botfather).
 2. Start a chat with BotFather and send the command `/newbot`.
@@ -118,7 +115,7 @@ Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An 
    - Set a unique username ending with `bot` (e.g., `MyNotifierBot`).
 4. Once created, BotFather will provide a **Bot Token**. Save this token securely.
 
-### 2. Obtain Chat IDs
+### Step 2: Obtain Chat IDs
 
 1. Start a chat with your bot by searching for its username on Telegram and sending any message.
 2. Visit the following URL in your browser, replacing `<your-bot-token>` with your actual bot token:
@@ -130,27 +127,25 @@ Define the neighborhoods to monitor in a separate `neighborhoods.json` file. An 
 
 ---
 
-## Usage
+## Running the Application
 
-### Running the Main Script
+### Run the Bot
 
-Run the bot to monitor listings and send notifications:
+Run the main script to monitor listings and send notifications:
 
 ```bash
 python main.py --neighborhoods neighborhoods.json
 ```
 
-If your `neighborhoods.json` file has a custom path or name, provide it with the `--neighborhoods` argument.
-
-### Testing the Bot
-
-Use `test_bot.py` to verify your Telegram integration:
+If your `neighborhoods.json` file has a custom path or name, provide it with the `--neighborhoods` argument:
 
 ```bash
-python test_bot.py
+python main.py --neighborhoods /path/to/custom_neighborhoods.json
 ```
 
-This script sends a test message to the specified chat ID to verify that the bot is working correctly.
+### View Logs
+
+Logs are stored in `bot.log` and can be viewed for troubleshooting or monitoring bot activity.
 
 ---
 
@@ -158,11 +153,10 @@ This script sends a test message to the specified chat ID to verify that the bot
 
 ### Common Issues
 
-- **Unauthorized Error**: Ensure that your Telegram Bot Token is correctly set in the `.env` file. The error may also occur if the bot is not properly authorized or if there's an issue with the chat ID. 
-- **Connection Timeout**: If you encounter timeouts while sending messages, adjust the connection pool size or increase the timeout values as needed in the bot's setup.
-- **Bot not sending messages**: Check your bot's permissions and ensure that your chat ID is correct. You can also check the logs to identify specific issues with sending messages.
+- **Unauthorized Error**: Ensure that your Telegram Bot Token is correctly set in the `.env` file. This error may also occur if the bot is not properly authorized or if there’s an issue with the chat ID.
+- **Connection Timeout**: If you encounter timeouts while sending messages, adjust the connection pool size or increase the timeout values in the bot’s setup.
+- **Bot Not Sending Messages**: Check your bot’s permissions and ensure that your chat ID is correct. Review the logs for specific issues with sending messages.
 
-For further assistance, refer to the bot's logs or check the Telegram Bot API documentation.
-
+For further assistance, refer to the bot’s logs or check the [Telegram Bot API documentation](https://core.telegram.org/bots/api).
 
 

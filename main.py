@@ -4,218 +4,272 @@ import json
 import os
 import logging
 from urllib.parse import urlencode
-from dotenv import load_dotenv  # If using python-dotenv
+from dotenv import load_dotenv
 import argparse
+import re  # For price sanitization
+from pathlib import Path
+import sys
+import aiofiles
+from aiolimiter import AsyncLimiter  # For rate limiting
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Configure logging
 logging.basicConfig(
-    level=logging.DEBUG,  # Set to DEBUG for detailed logs
+    level=logging.INFO,  # Change to DEBUG for more detailed logs
     format='%(asctime)s [%(levelname)s] %(message)s',
     handlers=[
         logging.FileHandler("bot.log"),
-        logging.StreamHandler()
+        logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger(__name__)
 
 # Define a global semaphore to limit concurrent send operations
-SEMAPHORE_LIMIT = 10  # Increased based on need for concurrency
-semaphore = asyncio.Semaphore(SEMAPHORE_LIMIT)  # Global semaphore
+SEMAPHORE_LIMIT = 3  # Adjust based on Telegram's rate limits
+semaphore = asyncio.Semaphore(SEMAPHORE_LIMIT)
 
-async def send_message_async(bot_token, chat_id, message_text, semaphore):
-    async with semaphore:
-        url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
-        params = {
-            "chat_id": chat_id,
-            "text": message_text,
-            "parse_mode": "Markdown",
-        }
-        debug_url = f"{url}?chat_id={chat_id}&text={message_text}"
-        logger.debug(f"Sending message to Chat ID {chat_id}")
-        logger.debug(f"Command: {debug_url}")
+# Define a rate limiter (e.g., 30 messages per second)
+rate_limiter = AsyncLimiter(max_rate=30, time_period=1)
 
+# Path to store sent post IDs
+SENT_POSTS_FILE = Path("sent_posts.json")
+
+def load_sent_posts():
+    """Load the set of sent post IDs from a JSON file."""
+    if SENT_POSTS_FILE.exists():
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, params=params) as response:
-                    if response.status == 200:
-                        logger.info(f"Message sent to {chat_id}: {message_text}")
-                    else:
-                        logger.error(f"Failed to send message to {chat_id}: {response.status}, {await response.text()}")
-        except Exception as e:
-            logger.error(f"Error sending message to {chat_id}: {e}")
+            with SENT_POSTS_FILE.open("r", encoding="utf-8") as f:
+                return set(json.load(f))
+        except json.JSONDecodeError:
+            logger.error("sent_posts.json is corrupted. Starting with an empty set.")
+            return set()
+    return set()
 
-async def fetch_json(session, url, headers, retries=3):
+def save_sent_posts(sent_posts):
+    """Save the set of sent post IDs to a JSON file."""
+    try:
+        with SENT_POSTS_FILE.open("w", encoding="utf-8") as f:
+            json.dump(list(sent_posts), f, ensure_ascii=False, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to save sent posts: {e}")
+
+# Telegram Bot Setup
+async def send_message_async(session, bot_token, chat_id, message_text, semaphore, retries=3):
+    """Send a message to a Telegram chat asynchronously with retries and rate limiting."""
+    async with rate_limiter:
+        async with semaphore:
+            url = f"https://api.telegram.org/bot{bot_token}/sendMessage"
+            params = {
+                "chat_id": chat_id,
+                "text": message_text,
+                "parse_mode": "HTML",  # Use HTML for formatting
+            }
+
+            for attempt in range(1, retries + 1):
+                try:
+                    async with session.post(url, params=params) as response:
+                        if response.status == 200:
+                            logger.info(f"Message sent to {chat_id}")
+                            return True
+                        elif response.status in [429, 503]:
+                            # Handle rate limiting and service unavailable
+                            retry_after = int(response.headers.get("Retry-After", 1))
+                            logger.warning(f"Attempt {attempt}: Rate limited or service unavailable. Retrying after {retry_after} seconds.")
+                            await asyncio.sleep(retry_after)
+                        else:
+                            response_text = await response.text()
+                            logger.error(f"Failed to send message to {chat_id}: {response.status}, {response_text}")
+                            return False
+                except Exception as e:
+                    logger.error(f"Attempt {attempt}: Error sending message to {chat_id}: {e}")
+                    await asyncio.sleep(2 ** attempt)  # Exponential backoff
+
+            logger.error(f"Failed to send message to {chat_id} after {retries} attempts.")
+            return False
+
+# Fetch JSON data for search parameters and perform the search with exponential backoff
+async def fetch_json(session, url, retries=3):
+    """Fetch JSON data from a URL with retries and exponential backoff."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (compatible; Yad2Bot/1.0)"
+    }
+    delay = 2  # Initial delay for retries
     for attempt in range(1, retries + 1):
         try:
             async with session.get(url, headers=headers) as response:
-                if response.status != 200:
-                    logger.warning(f"Attempt {attempt}: Received status code {response.status} for URL: {url}")
-                    continue
-                return await response.json()
-        except (aiohttp.ClientError, asyncio.TimeoutError) as e:
-            logger.warning(f"Attempt {attempt}: Error fetching {url}: {e}")
-        await asyncio.sleep(2)  # Wait before retrying
+                if response.status == 200:
+                    json_data = await response.json()
+                    logger.debug(f"Fetched data for URL {url}: {json_data}")
+                    return json_data
+                elif response.status in [429, 503]:  # Rate limit or service unavailable
+                    logger.warning(f"Attempt {attempt}: Received status code {response.status} for URL: {url}. Retrying after {delay} seconds.")
+                else:
+                    logger.warning(f"Attempt {attempt}: Received status code {response.status} for URL: {url}. Retrying after {delay} seconds.")
+        except aiohttp.ClientError as e:
+            logger.warning(f"Attempt {attempt}: Network error fetching {url}: {e}. Retrying after {delay} seconds.")
+        except asyncio.TimeoutError:
+            logger.warning(f"Attempt {attempt}: Timeout fetching {url}. Retrying after {delay} seconds.")
+        except Exception as e:
+            logger.warning(f"Attempt {attempt}: Unexpected error fetching {url}: {e}. Retrying after {delay} seconds.")
+        await asyncio.sleep(delay)
+        delay *= 2  # Exponential backoff
     logger.error(f"Failed to fetch {url} after {retries} attempts")
     return None
 
-async def handle_new_properties(data, unique_links, neighborhood, bot_token, chat_ids, session, semaphore):
+# Process feed items and send Telegram messages
+async def process_feed_items(data, bot_token, chat_ids, neighborhood_name, session, sent_posts):
+    """Process feed items and send new posts as Telegram messages."""
     count = 0
-    for d in data.get('data', {}).get('feed', {}).get('feed_items', []):
+
+    # Process all items found in the neighborhood's feed
+    feed_items = data.get('data', {}).get('feed', {}).get('feed_items', [])
+    if not feed_items:
+        logger.warning(f"No feed items found for neighborhood '{neighborhood_name}'")
+        return count
+
+    for d in feed_items:
+        # Skip non-item entries without 'id'
+        if 'id' not in d:
+            logger.debug(f"Skipping post without 'id': {d}")
+            continue
+
         try:
-            neighborhood_name = d.get('neighborhood', 'Unknown Neighborhood')
-            if d.get('feed_source') != "private":
-                continue
+            # Extract 'id'
+            item_id = d.get('id') or d.get('item_id') or d.get('itemId')
+            if not item_id:
+                logger.debug(f"Skipping post without 'id': {d}")
+                continue  # Skip this post as we cannot create a valid link
 
-            Address = d.get('title_1', 'No Address')
-            price = d.get('price', 'No Price')
-            row_3 = d.get('row_3', ['No Detail 1', 'No Detail 2', 'No Detail 3'])
-            details = ", ".join(row_3[:3])
-            item_id = d.get('id')
-            Addid = f"https://www.yad2.co.il/item/{item_id}"
+            if item_id in sent_posts:
+                logger.debug(f"Post ID {item_id} already sent. Skipping.")
+                continue  # Skip already sent posts
 
-            if item_id and item_id not in unique_links:
-                unique_links.add(item_id)
-                message = f'*כתובת*: {Address}, *מחיר*: {price}. *פרטים נוספים*: {details}. [קישור למודעה]({Addid})'
+            # Extract 'title' with multiple fallbacks
+            title = d.get('title') or d.get('title_1') or d.get('street') or 'No title available'
 
-                # Create tasks to send message to all chat_ids
-                message_tasks = [
-                    asyncio.create_task(send_message_async(bot_token, chat_id, message, semaphore))
-                    for chat_id in chat_ids
-                ]
-                await asyncio.gather(*message_tasks, return_exceptions=True)
+            # Extract 'price' with multiple fallbacks
+            price = d.get('price') or d.get('price_value') or d.get('priceText') or 'No price available'
 
-                latitude = d.get('coordinates', {}).get('latitude', 0)
-                longitude = d.get('coordinates', {}).get('longitude', 0)
+            # Sanitize and format the price
+            if isinstance(price, (int, float)):
+                price = f"{price:,} ₪"
+            elif isinstance(price, str):
+                # Extract digits and format
+                price_digits = re.findall(r'\d+', price)
+                if price_digits:
+                    price_number = int(''.join(price_digits))
+                    price = f"{price_number:,} ₪"
+                else:
+                    price = 'No price available'
+            else:
+                price = 'No price available'
 
-                # Create tasks to send location to all chat_ids
-                # location_tasks = [
-                #     asyncio.create_task(send_location_async(bot_token, chat_id, latitude, longitude, semaphore))
-                #     for chat_id in chat_ids
-                # ]
-                # await asyncio.gather(*location_tasks, return_exceptions=True)
+            # Construct the post link
+            link = f"https://www.yad2.co.il/item/{item_id}"
 
-                count += 1  # Increase the count for each new property
+            # Escape HTML special characters to prevent formatting issues
+            escaped_title = re.sub(r'([&<>])', lambda match: {'&': '&amp;', '<': '&lt;', '>': '&gt;'}[match.group()], title)
+            escaped_neighborhood = re.sub(r'([&<>])', lambda match: {'&': '&amp;', '<': '&lt;', '>': '&gt;'}[match.group()], neighborhood_name)
+
+            # Construct the message using HTML formatting
+            message = f"""<b>נמצאה דירה חדשה המתאימה לך!</b>
+
+<b>רחוב:</b> {escaped_title}
+<b>מחיר:</b> {price}
+<b>שכונת:</b> {escaped_neighborhood}
+
+<a href="{link}">קישור לפוסט</a>"""
+
+            # Send message to all chat_ids and collect success flags
+            send_tasks = [send_message_async(session, bot_token, chat_id, message, semaphore) for chat_id in chat_ids]
+            send_results = await asyncio.gather(*send_tasks)
+
+            # Check if all messages were sent successfully
+            if all(send_results):
+                logger.info(f"New post found: ID {item_id}, Title: {title}, Price: {price}")
+                sent_posts.add(item_id)  # Mark as sent
+                count += 1
+            else:
+                logger.error(f"Failed to send all messages for post ID {item_id}. Post marked as sent to prevent duplicates.")
 
         except Exception as e:
-            logger.error(f"Error processing feed item: {e}")
+            logger.error(f"Error processing post {d}: {e}")
+            continue
+
+    logger.debug(f"Processed {count} new posts for neighborhood '{neighborhood_name}'")
     return count
 
-def load_neighborhoods(file_path):
-    try:
-        with open(file_path, 'r', encoding='utf-8') as file:
-            neighborhoods = json.load(file)
-            logger.debug(f"Loaded {len(neighborhoods)} neighborhoods from {file_path}")
-            return neighborhoods
-    except FileNotFoundError:
-        logger.error(f"Neighborhoods file not found: {file_path}")
-        return []
-    except json.JSONDecodeError as e:
-        logger.error(f"Error decoding JSON from {file_path}: {e}")
-        return []
-    except Exception as e:
-        logger.error(f"Unexpected error loading neighborhoods from {file_path}: {e}")
-        return []
-
-async def main_task(params, neighborhood, bot_token, chat_ids, session, headers, semaphore):
-    json_file_path = 'unique_links.json'
-    page_state_file_path = 'page_state.json'
-
-    # Load unique links from file
-    try:
-        if os.path.exists(json_file_path):
-            with open(json_file_path, 'r', encoding='utf-8') as json_file:
-                unique_links = set(json.load(json_file))
-        else:
-            unique_links = set()
-    except Exception as e:
-        logger.error(f"Error reading {json_file_path}: {e}")
-        unique_links = set()
-
-    # Load page state
-    try:
-        if os.path.exists(page_state_file_path):
-            with open(page_state_file_path, 'r', encoding='utf-8') as state_file:
-                page_state = json.load(state_file)
-        else:
-            page_state = {}
-    except Exception as e:
-        logger.error(f"Error reading {page_state_file_path}: {e}")
-        page_state = {}
-
-    search_key = str(params)
-    starting_page = page_state.get(search_key, 1)
-
-    count = 0
+# Main task for each neighborhood
+async def main_task(params, bot_token, chat_ids, session, sent_posts):
+    """Process a single neighborhood: fetch data, process feed items, and send messages."""
     base_url = "https://gw.yad2.co.il/feed-search-legacy/realestate/rent"
+    max_pages = params.get('max_pages', 10)  # Default to 10 pages if not specified
+    neighborhood_code = params.get('neighborhood')
+    neighborhood_name = params.get('name', 'Unknown Neighborhood')
+    expected_minimum = 1  # Minimum items expected to continue pagination
 
-    page = starting_page
-    max_pages = 10  # Set the maximum pages to fetch
+    new_posts_count = 0
 
-    while page <= max_pages:
-        params['page'] = page
-        filtered_params = {key: value for key, value in params.items() if key != 'name'}
-        encoded_params = urlencode(filtered_params)
+    for page in range(1, max_pages + 1):
+        params_with_page = params.copy()  # Avoid modifying the original params
+        params_with_page['page'] = page
+
+        # Log the neighborhood and page being processed
+        logger.info(f"Searching in '{neighborhood_name}' (Page {page})")
+
+        # Fetch data from the URL
+        encoded_params = urlencode(params_with_page, doseq=True)
         final_url = f"{base_url}?{encoded_params}"
 
-        logger.debug(f"Fetching URL: {final_url}")
-        response_json = await fetch_json(session, final_url, headers)
+        logger.info(f"Fetching URL: {final_url}")
 
-        if response_json and 'feed_items' in response_json.get('data', {}).get('feed', {}):
-            # Process the feed items and handle new properties
-            new_count = await handle_new_properties(response_json, unique_links, neighborhood, bot_token, chat_ids, session, semaphore)
-            count += new_count
+        response_json = await fetch_json(session, final_url)
 
-            # Stop if no new results are found
-            if not response_json['data']['feed']['feed_items']:
-                logger.info(f"No more results found on page {page}. Stopping pagination.")
-                break
+        if response_json and 'feed' in response_json.get('data', {}):
+            # Log the number of feed items
+            feed_items = response_json['data']['feed'].get('feed_items', [])
+            logger.info(f"Page {page} of '{neighborhood_name}' contains {len(feed_items)} feed items.")
 
-            page += 1  # Go to the next page
+            if len(feed_items) < expected_minimum:
+                logger.info(f"Page {page} of '{neighborhood_name}' has fewer items ({len(feed_items)}) than expected ({expected_minimum}). Stopping pagination.")
+                break  # Stop fetching further pages if fewer items are found
+
+            # Process the feed and count new posts
+            new_count = await process_feed_items(
+                response_json,
+                bot_token,
+                chat_ids,
+                neighborhood_name,
+                session,
+                sent_posts
+            )
+
+            # Update the count of new posts found
+            new_posts_count += new_count
+
+            # Introduce a delay to prevent rate limiting
+            await asyncio.sleep(1)  # Wait for 1 second between page requests
         else:
-            logger.info(f"No data found or request failed for page {page}. Stopping pagination.")
-            break
+            logger.warning(f"No valid feed found for '{neighborhood_name}' (Page {page})")
+            break  # Stop pagination if no feed is found
 
-    # Save the unique links and page state
-    try:
-        with open(json_file_path, 'w', encoding='utf-8') as json_file:
-            json.dump(list(unique_links), json_file, ensure_ascii=False, indent=4)
-            logger.debug(f"Saved unique_links to {json_file_path}")
-    except Exception as e:
-        logger.error(f"Failed to save unique_links: {e}")
+    return new_posts_count
 
-    page_state[search_key] = page
-    try:
-        with open(page_state_file_path, 'w', encoding='utf-8') as state_file:
-            json.dump(page_state, state_file, ensure_ascii=False, indent=4)
-            logger.debug(f"Saved page_state to {page_state_file_path}")
-    except Exception as e:
-        logger.error(f"Failed to save page_state: {e}")
-
-    # if count > 0:
-    #     summary_message = f'דירות חדשות בשכונת *{neighborhood}*: {count}'
-    #     summary_tasks = [
-    #         asyncio.create_task(send_message_async(bot_token, chat_id, summary_message, semaphore))
-    #         for chat_id in chat_ids
-    #     ]
-    #     await asyncio.gather(*summary_tasks, return_exceptions=True)
-
-    # Save the updated unique_links to the JSON file
-    
-    return count > 0
-
+# Main bot run logic
 async def run_bot(neighborhoods_file):
+    """Run the Yad2SearchBot: load configurations, process neighborhoods, and send notifications."""
     bot_token = os.getenv('TELEGRAM_BOT_TOKEN')
     if not bot_token:
         logger.error("TELEGRAM_BOT_TOKEN environment variable not set.")
         return
 
+    # Collect all chat_ids from environment variables
     chat_id_dict = {}
     for key, value in os.environ.items():
         if key.startswith('CHAT_ID_'):
-            name = key[len('CHAT_ID_'):]
+            name = key[len('CHAT_ID_'):]  # Extract the name after 'CHAT_ID_'
             try:
                 chat_id = int(value)
                 chat_id_dict[name] = chat_id
@@ -226,55 +280,38 @@ async def run_bot(neighborhoods_file):
         logger.error("No CHAT_ID_* variables found in .env file.")
         return
 
-    recipient_names = ', '.join(chat_id_dict.keys())
-    logger.info(f"SEND TO: {recipient_names}")
-
     chat_ids = list(chat_id_dict.values())
+    logger.info(f"SEND TO: {', '.join(chat_id_dict.keys())}")
 
-    neighborhoods_params = load_neighborhoods(neighborhoods_file)
-    if not neighborhoods_params:
-        logger.error("No neighborhoods loaded. Exiting.")
+    # Load neighborhoods from JSON file
+    try:
+        async with aiofiles.open(neighborhoods_file, 'r', encoding='utf-8') as file:
+            content = await file.read()
+            neighborhoods_params = json.loads(content)
+    except Exception as e:
+        logger.error(f"Error loading neighborhoods file: {e}")
         return
 
-    headers = {
-        'Accept': 'application/json, text/plain, */*',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Cache-Control': 'no-cache',
-        'Connection': 'keep-alive',
-        'Cookie': 'your-cookie-here',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    }
-
     timeout = aiohttp.ClientTimeout(total=60)
-    data_connector = aiohttp.TCPConnector(limit=50)
-    async with aiohttp.ClientSession(connector=data_connector, timeout=timeout) as data_session:
-        try:
-            tasks = []
-            for params in neighborhoods_params:
-                task = asyncio.create_task(
-                    main_task(
-                        params=params,
-                        neighborhood=params['name'],
-                        bot_token=bot_token,
-                        chat_ids=chat_ids,
-                        session=data_session,
-                        headers=headers,
-                        semaphore=semaphore
-                    )
-                )
-                tasks.append(task)
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        sent_posts = load_sent_posts()
+        total_new_posts = 0
+        for params in neighborhoods_params:
+            # Process each neighborhood one at a time for sequential processing
+            new_count = await main_task(params, bot_token, chat_ids, session, sent_posts)
+            total_new_posts += new_count
 
-            await asyncio.gather(*tasks, return_exceptions=True)
-        except Exception as e:
-            logger.error(f"An unexpected error occurred: {e}")
+        # Summarize the total number of new posts
+        logger.info(f"Summary: Searched in {len(neighborhoods_params)} neighborhoods and found {total_new_posts} new apartments matching your criteria. Notifications sent via Telegram.")
 
+        # Save sent posts after processing all neighborhoods
+        save_sent_posts(sent_posts)
+
+    logger.info("Bot run completed successfully.")
+
+# Run the bot
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Yad2 Apartment Notifier Bot")
-    parser.add_argument(
-        '--neighborhoods',
-        type=str,
-        default='neighborhoods.json',
-        help='Path to the neighborhoods JSON file'
-    )
+    parser.add_argument('--neighborhoods', type=str, default='neighborhoods.json', help='Path to the neighborhoods JSON file')
     args = parser.parse_args()
     asyncio.run(run_bot(args.neighborhoods))

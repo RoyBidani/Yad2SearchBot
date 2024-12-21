@@ -1,6 +1,0 @@
-{
-    "{'name': 'בורכוב גבעתיים', 'topArea': 2, 'area': 3, 'city': 6300, 'rooms': '3-5', 'price': '0-7000', 'balcony': 1, 'neighborhood': 355, 'squaremeter': '120--1', 'forceLdLoad': True}": 101,
-    "{'name': 'הצפון החדש דרום', 'topArea': 2, 'area': 1, 'city': 5000, 'rooms': '3-5', 'price': '0-7000', 'balcony': 1, 'neighborhood': 1519, 'squaremeter': '120--1', 'forceLdLoad': True}": 11,
-    "{'name': 'החרוזית רמת גן', 'topArea': 2, 'area': 3, 'city': 8600, 'rooms': '3-5', 'price': '0-7000', 'balcony': 1, 'neighborhood': 327, 'squaremeter': '120--1', 'forceLdLoad': True}": 11,
-    "{'name': 'שכונת גפן רמת גן', 'topArea': 2, 'area': 3, 'city': 8600, 'rooms': '3-5', 'price': '0-7000', 'balcony': 1, 'neighborhood': 235, 'squaremeter': '120--1', 'forceLdLoad': True}": 11
-}
