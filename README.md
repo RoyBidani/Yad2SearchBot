@@ -53,8 +53,16 @@ Unknown keys return `400 <key> is not allowed`, which is logged.
 
 Current searches: 2–3 rooms with a balcony, or a garden apartment, in ת"א / רמת גן / גבעתיים and הרצליה.
 
-## GitHub Actions
+## Scheduling
 
-`.github/workflows/yad2bot.yml` runs hourly and on manual dispatch. Repository secrets needed:
-`TELEGRAM_BOT_TOKEN`, `CHAT_ID_USER` (add more `CHAT_ID_*` to the workflow `env` for more recipients).
-Pushing `sent_posts.json` uses the built-in `GITHUB_TOKEN`; no PAT required.
+Radware blocks GitHub-hosted runner IPs outright (`Radware Bot Manager Block`), so the hourly cron lives on a Mac with a residential IP via launchd.
+`run.sh` runs the bot and pushes `sent_posts.json`; `~/Library/LaunchAgents/com.roybidani.yad2bot.plist` fires it every 3600s (missed runs fire on wake).
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.roybidani.yad2bot.plist   # install
+launchctl kickstart -k gui/$(id -u)/com.roybidani.yad2bot                            # run now
+launchctl bootout gui/$(id -u)/com.roybidani.yad2bot                                 # remove
+tail -f launchd.log
+```
+
+`.github/workflows/yad2bot.yml` is kept for manual dispatch only; it will fail until the IP block changes.

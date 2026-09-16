@@ -1,8 +1,8 @@
 name: Yad2 Apartment Notifier Bot
+# No cron: Radware blocks GitHub runner IPs outright ("Radware Bot Manager Block").
+# The bot runs hourly via launchd on a residential machine, see README. Manual dispatch kept for experiments.
 on:
-  schedule:
-    - cron: '0 * * * *' # Runs once an hour
-  workflow_dispatch: # Allows manual triggering
+  workflow_dispatch:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
