@@ -1,0 +1,50 @@
+[
+    {
+        "name": "ת\"א / רמת גן / גבעתיים – 2-3 חד' עם מרפסת",
+        "params": {
+            "region": 3,
+            "multiCity": "5000,8600,6300",
+            "property": "1,3",
+            "minRooms": 2,
+            "maxRooms": 3,
+            "balcony": 1,
+            "maxPrice": 5500
+        }
+    },
+    {
+        "name": "ת\"א / רמת גן / גבעתיים – דירת גן 2-3 חד'",
+        "params": {
+            "region": 3,
+            "multiCity": "5000,8600,6300",
+            "property": 3,
+            "minRooms": 2,
+            "maxRooms": 3,
+            "maxPrice": 5500
+        }
+    },
+    {
+        "name": "הרצליה – 2-3 חד' עם מרפסת",
+        "params": {
+            "region": 1,
+            "area": 18,
+            "city": 6400,
+            "property": "1,3",
+            "minRooms": 2,
+            "maxRooms": 3,
+            "balcony": 1,
+            "maxPrice": 5500
+        }
+    },
+    {
+        "name": "הרצליה – דירת גן 2-3 חד'",
+        "params": {
+            "region": 1,
+            "area": 18,
+            "city": 6400,
+            "property": 3,
+            "minRooms": 2,
+            "maxRooms": 3,
+            "maxPrice": 5500
+        }
+    }
+]
