@@ -44,19 +44,27 @@ def open_yad2(pw):
     browser = pw.chromium.launch(headless=True)
     page = browser.new_page(user_agent=UA, locale="he-IL")
     page.goto(SITE, wait_until="domcontentloaded")
-    page.wait_for_timeout(5000)
+    for _ in range(12):
+        page.wait_for_timeout(2500)
+        if "Radware" not in page.title():
+            break
+    log.info("yad2 page title: %s", page.title())
     return browser, page
 
 
 def fetch_feed(page, params):
     url = f"{FEED}?{urlencode(params)}"
-    res = page.evaluate(
-        "async (u) => { const r = await fetch(u, {credentials: 'include'});"
-        " return {status: r.status, body: await r.text()}; }", url)
-    if res["status"] != 200:
-        log.warning("feed %s -> %s %s", url, res["status"], res["body"][:200])
-        return {}
-    return json.loads(res["body"]).get("data", {})
+    for attempt in range(2):
+        res = page.evaluate(
+            "async (u) => { try { const r = await fetch(u, {credentials: 'include'});"
+            " return {status: r.status, body: await r.text()}; }"
+            " catch (e) { return {status: 0, body: String(e)}; } }", url)
+        if res["status"] == 200:
+            return json.loads(res["body"]).get("data", {})
+        log.warning("feed %s -> %s %s (page title: %s)", url, res["status"], res["body"][:200], page.title())
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_timeout(5000)
+    return None
 
 
 def iter_items(data):
@@ -114,13 +122,16 @@ def run(searches_file, dry_run, seed):
         return
     searches = json.loads(Path(searches_file).read_text("utf-8"))
     sent = load_sent()
-    new = 0
+    new = fetched = 0
     with sync_playwright() as pw:
         browser, page = open_yad2(pw)
         for s in searches:
             pageno, total_pages = 1, 1
             while pageno <= min(total_pages, s.get("max_pages", 200)):
                 data = fetch_feed(page, {**s["params"], "page": pageno})
+                if data is None:
+                    break
+                fetched += 1
                 total_pages = data.get("pagination", {}).get("totalPages", 0)
                 items = list(iter_items(data))
                 log.info("%s page %s/%s: %s items", s["name"], pageno, total_pages, len(items))
@@ -140,6 +151,8 @@ def run(searches_file, dry_run, seed):
     if not dry_run:
         save_sent(sent)
     log.info("done: %s new listings", new)
+    if not fetched:
+        sys.exit("no feed page could be fetched")
 
 
 if __name__ == "__main__":
