@@ -55,15 +55,18 @@ def open_yad2(pw):
 def fetch_feed(page, params):
     url = f"{FEED}?{urlencode(params)}"
     for attempt in range(2):
-        res = page.evaluate(
-            "async (u) => { try { const r = await fetch(u, {credentials: 'include'});"
-            " return {status: r.status, body: await r.text()}; }"
-            " catch (e) { return {status: 0, body: String(e)}; } }", url)
-        if res["status"] == 200:
-            return json.loads(res["body"]).get("data", {})
-        log.warning("feed %s -> %s %s (page title: %s)", url, res["status"], res["body"][:200], page.title())
-        page.reload(wait_until="domcontentloaded")
-        page.wait_for_timeout(5000)
+        try:
+            res = page.evaluate(
+                "async (u) => { try { const r = await fetch(u, {credentials: 'include', signal: AbortSignal.timeout(20000)});"
+                " return {status: r.status, body: await r.text()}; }"
+                " catch (e) { return {status: 0, body: String(e)}; } }", url)
+            if res["status"] == 200:
+                return json.loads(res["body"]).get("data", {})
+            log.warning("feed %s -> %s %s (page title: %s)", url, res["status"], res["body"][:200], page.title())
+            page.reload(wait_until="domcontentloaded", timeout=30000)
+            page.wait_for_timeout(5000)
+        except Exception as e:  # ponytail: Mac dozing mid-run makes any Playwright call hang or time out; give up on this page, next hour retries
+            log.warning("feed %s attempt %s failed: %s", url, attempt + 1, str(e).splitlines()[0][:200])
     return None
 
 
