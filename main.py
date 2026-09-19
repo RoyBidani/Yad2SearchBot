@@ -111,9 +111,10 @@ def send(token, chat_ids, text):
             if r.status_code == 429:
                 time.sleep(r.json().get("parameters", {}).get("retry_after", 5))
                 continue
+            break
+        if not r.ok:
             log.error("telegram %s -> %s %s", chat_id, r.status_code, r.text[:200])
             ok = False
-            break
     return ok
 
 
