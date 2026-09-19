@@ -1,7 +1,7 @@
 # Yad2 Apartment Notifier Bot
 
-Polls [Yad2](https://www.yad2.co.il/) rent listings every hour and sends every new match to your Telegram.
-Each listing arrives once; `sent_posts.json` remembers what was already sent.
+Polls [Yad2](https://www.yad2.co.il/) rent listings every hour and sends every match to your Telegram.
+The first run sends everything currently listed; after that only new listings. `sent_posts.json` remembers what was sent.
 
 You define the searches (cities, rooms, price, balcony, garden…) in `searches.json`. The shipped file is one example:
 2–3 rooms with a balcony or a garden apartment, up to 5,500 ₪, in Tel Aviv / Ramat Gan / Givatayim and Herzliya.
@@ -87,22 +87,19 @@ Edit `searches.json`. Parameter reference below. Changes take effect on the next
 Prints every current match, sends nothing, saves nothing. Listings appear = Yad2 access works.
 `yad2 page title: Radware Bot Manager Block` = your IP is blocked (VPN? office network?). Try from home.
 
-### 7. Seed, once
+### 7. Go live
 
 ```bash
-./venv/bin/python main.py --seed
-```
-
-Marks everything currently listed as already sent, without sending. Skip this and your first live run dumps
-~1,500 messages into Telegram. If you cloned someone else's `sent_posts.json`, that is fine, seed overwrites it.
-
-### 8. Go live
-
-```bash
+echo "[]" > sent_posts.json                        # forget whatever the repo's previous owner already saw
 launchctl kickstart -k gui/$(id -u)/com.yad2bot
 ```
 
-Runs now, then every hour. New matches land in Telegram.
+The first run sends **every** current match (a few hundred to ~1,500 messages, Telegram paces them at ~1/sec).
+From then on, hourly, only new listings.
+
+Don't want the backlog? Run `./venv/bin/python main.py --seed` first: it marks everything currently listed as seen
+without sending, so the first live run is quiet. Adding a search later works the same way: its backlog comes in
+on the next run unless you seed first.
 
 ---
 
@@ -181,6 +178,6 @@ The path (`/rent/tel-aviv-area`, `/rent/center-and-sharon`, …) tells the regio
 | `TELEGRAM_BOT_TOKEN / CHAT_ID_* missing` | `.env` missing or not in the repo root |
 | no `done:` line for hours in `launchd.log` | Mac was asleep, or agent not loaded (`launchctl print ...`) |
 | `push skipped: no write access` | Expected on a clone you don't own. Fork to get backups |
-| first live run flooded Telegram | you skipped `--seed` |
+| first live run flooded Telegram | that is the backlog, by design. Use `--seed` before going live to skip it |
 
 Logs: `bot.log` (every run, written by `main.py`) and `launchd.log` (stdout/stderr of the hourly job). Both git-ignored.
