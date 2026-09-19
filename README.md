@@ -65,7 +65,14 @@ Create `.env` in the repo root (git-ignored):
 TELEGRAM_BOT_TOKEN=123456789:AAH...
 CHAT_ID_ME=111111111
 CHAT_ID_PARTNER=222222222      # optional, any number of CHAT_ID_* lines
+
+# optional second bot/chat, used by searches that set "bot": "BS" (any prefix you like)
+BS_TELEGRAM_BOT_TOKEN=987654321:AAG...
+BS_CHAT_ID_ME=111111111
 ```
+
+A search without `"bot"` uses the unprefixed variables. A search with `"bot": "XYZ"` uses `XYZ_TELEGRAM_BOT_TOKEN`
+and every `XYZ_CHAT_ID_*`. That is how one hourly job feeds several Telegram bots, e.g. one per city or per friend.
 
 ### 5. Define your searches
 
@@ -140,15 +147,18 @@ Unknown keys return `400 <key> is not allowed`, which is logged.
 ```json
 {
     "name": "shown as the message title",
+    "bot": "BS",
     "params": { "region": 3, "multiCity": "5000,8600", "property": "1,3", "minRooms": 2, "maxRooms": 3, "balcony": 1, "maxPrice": 5500 }
 }
 ```
 
+`bot` is optional, see `.env` above. `name` and `params` are required.
+
 | key | meaning |
 |---|---|
-| `region` | required. 3 = תל אביב והסביבה, 1 = מרכז והשרון, others: read from the site URL |
-| `city` / `multiCity` | 5000 ת"א, 8600 רמת גן, 6300 גבעתיים, 6400 הרצליה. `multiCity` is comma-separated, same region only |
-| `area` | needed with a single `city` outside region 3 (הרצליה = 18) |
+| `region` | required. 3 = תל אביב והסביבה, 1 = מרכז והשרון, 2 = דרום, others: read from the site URL |
+| `city` / `multiCity` | 5000 ת"א, 8600 רמת גן, 6300 גבעתיים, 6400 הרצליה, 9000 באר שבע. `multiCity` is comma-separated, same region only |
+| `area` | needed with a single `city` outside region 3 (הרצליה = 18, באר שבע = 22) |
 | `property` | 1 דירה, 3 דירת גן, 4 סטודיו, 6 גג/פנטהאוז, 7 דופלקס, 11 יחידת דיור. Comma-separated |
 | `minRooms` / `maxRooms` | 2 / 3 covers 2, 2.5, 3 |
 | `balcony` | 1 = must have balcony |

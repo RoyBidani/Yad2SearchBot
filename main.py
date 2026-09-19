@@ -117,18 +117,25 @@ def send(token, chat_ids, text):
     return ok
 
 
+def telegram_targets(bot):
+    prefix = f"{bot}_" if bot else ""
+    token = os.getenv(f"{prefix}TELEGRAM_BOT_TOKEN")
+    chat_ids = [v for k, v in os.environ.items() if k.startswith(f"{prefix}CHAT_ID_")]
+    return token, chat_ids
+
+
 def run(searches_file, dry_run, seed):
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_ids = [v for k, v in os.environ.items() if k.startswith("CHAT_ID_")]
-    if not dry_run and not seed and not (token and chat_ids):
-        log.error("TELEGRAM_BOT_TOKEN / CHAT_ID_* missing")
-        return
     searches = json.loads(Path(searches_file).read_text("utf-8"))
     sent = load_sent()
     new = fetched = 0
     with sync_playwright() as pw:
         browser, page = open_yad2(pw)
         for s in searches:
+            token, chat_ids = telegram_targets(s.get("bot"))
+            if not dry_run and not seed and not (token and chat_ids):
+                log.error("%s: missing %sTELEGRAM_BOT_TOKEN / %sCHAT_ID_* in .env, skipping",
+                          s["name"], *([f"{s['bot']}_"] * 2 if s.get("bot") else ["", ""]))
+                continue
             pageno, total_pages = 1, 1
             while pageno <= min(total_pages, s.get("max_pages", 200)):
                 data = fetch_feed(page, {**s["params"], "page": pageno})

@@ -46,5 +46,32 @@
             "maxRooms": 3,
             "maxPrice": 5500
         }
+    },
+    {
+        "name": "באר שבע – 2-3 חד' עם מרפסת",
+        "bot": "BS",
+        "params": {
+            "city": 9000,
+            "area": 22,
+            "region": 2,
+            "minRooms": 2,
+            "maxRooms": 3,
+            "maxPrice": 5500,
+            "property": "1,3",
+            "balcony": 1
+        }
+    },
+    {
+        "name": "באר שבע – דירת גן 2-3 חד'",
+        "bot": "BS",
+        "params": {
+            "city": 9000,
+            "area": 22,
+            "region": 2,
+            "minRooms": 2,
+            "maxRooms": 3,
+            "maxPrice": 5500,
+            "property": 3
+        }
     }
 ]
