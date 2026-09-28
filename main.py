@@ -43,7 +43,15 @@ def open_yad2(pw):
     # earns the cookies; every feed call then runs as fetch() inside that page.
     browser = pw.chromium.launch(headless=True)
     page = browser.new_page(user_agent=UA, locale="he-IL")
-    page.goto(SITE, wait_until="domcontentloaded")
+    for attempt in range(4):  # ponytail: launchd often fires before Wi-Fi is back after wake
+        try:
+            page.goto(SITE, wait_until="domcontentloaded")
+            break
+        except Exception as e:
+            if attempt == 3:
+                sys.exit(f"yad2 unreachable: {str(e).splitlines()[0][:120]}")
+            log.warning("yad2 unreachable (%s), retrying in 20s", str(e).splitlines()[0][:80])
+            page.wait_for_timeout(20000)
     for _ in range(12):
         page.wait_for_timeout(2500)
         if "Radware" not in page.title():
