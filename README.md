@@ -6,7 +6,7 @@ The first run sends everything currently listed; after that only new listings. `
 You define the searches (cities, rooms, price, balcony, garden…) in `searches.json`. The shipped file is one example:
 2–3 rooms with a balcony or a garden apartment, up to 5,500 ₪, in Tel Aviv / Ramat Gan / Givatayim and Herzliya.
 
-Runs on a Mac at home. Cloud runners don't work, see [Why not a server](#why-not-a-server--github-actions).
+Runs on a Mac at home (launchd) or a small Linux server (systemd timer). GitHub Actions does not work, see below.
 
 ---
 
@@ -128,11 +128,30 @@ sudo pmset -c sleep 0 displaysleep 10
 
 Lid closed (without an external display) or battery power still sleeps. Keep it plugged in and open.
 
-### Why not a server / GitHub Actions
+### Linux server instead of the Mac (systemd timer)
+
+A small Ubuntu box with outbound internet works too; an AWS t3a.micro behind a NAT gateway passes Radware
+(tested 2026-10-20). GitHub-hosted runners do not. On the server, as root:
+
+```bash
+git clone https://github.com/<you>/Yad2SearchBot.git /opt/yad2bot && cd /opt/yad2bot
+./deploy/install.sh                 # first run creates /etc/yad2bot.env and stops
+nano /etc/yad2bot.env               # tokens + chat ids, same names as .env
+./deploy/install.sh                 # installs Chromium, systemd service + hourly timer
+systemctl start yad2bot.service && journalctl -u yad2bot -n 20 --no-pager
+```
+
+Layout: code `/opt/yad2bot`, state `/var/lib/yad2bot/sent_posts.json` (seeded from the repo's file on first
+install, so no backlog re-send), browsers `/opt/pw-browsers`, secrets `/etc/yad2bot.env`, runs as user `yad2bot`.
+`yad2bot.timer` is `OnCalendar=hourly` with `Persistent=true`, so a missed hour runs right after a reboot.
+Health: `systemctl list-timers yad2bot.timer`, `journalctl -u yad2bot --since -1d | grep done:`.
+Update: `cd /opt/yad2bot && git pull && ./deploy/install.sh`. Run only one instance (Mac **or** server),
+otherwise you get every listing twice.
+
+### Why not GitHub Actions
 
 `.github/workflows/yad2bot.yml` exists for manual dispatch, but GitHub-hosted runners are blocked by Radware
-outright, as is every cloud IP tried. A Raspberry Pi or old laptop at home works the same way as the Mac (adapt
-`install.sh` to cron/systemd).
+outright. Use the Mac path or the Linux server path above.
 
 ---
 
@@ -177,7 +196,8 @@ The path (`/rent/tel-aviv-area`, `/rent/center-and-sharon`, …) tells the regio
 | `telegram <id> -> 400/403` | Wrong chat id, or that user never pressed Start on the bot |
 | `TELEGRAM_BOT_TOKEN / CHAT_ID_* missing` | `.env` missing or not in the repo root |
 | no `done:` line for hours in `launchd.log` | Mac was asleep, or agent not loaded (`launchctl print ...`) |
+| server: timer not firing | `systemctl list-timers yad2bot.timer`; `systemctl status yad2bot.service` for the last run's error |
 | `push skipped: no write access` | Expected on a clone you don't own. Fork to get backups |
 | first live run flooded Telegram | that is the backlog, by design. Use `--seed` before going live to skip it |
 
-Logs: `bot.log` (every run, written by `main.py`) and `launchd.log` (stdout/stderr of the hourly job). Both git-ignored.
+Logs: `launchd.log` on the Mac (git-ignored), `journalctl -u yad2bot` on a server.

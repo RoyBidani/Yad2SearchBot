@@ -13,8 +13,7 @@ from dotenv import load_dotenv
 from playwright.sync_api import sync_playwright
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
-                    handlers=[logging.FileHandler("bot.log"), logging.StreamHandler(sys.stdout)])
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s", stream=sys.stdout)
 log = logging.getLogger(__name__)
 
 SITE = "https://www.yad2.co.il/realestate/rent"
@@ -22,7 +21,7 @@ FEED = "https://gw.yad2.co.il/realestate-feed/rent/feed"
 ITEM = "https://www.yad2.co.il/realestate/item/{}"
 # Every listing bucket the feed returns; yad1 is projects, skipped on purpose.
 POOLS = ("private", "agency", "platinum", "trio", "booster", "leadingBroker", "kingOfTheHar")
-SENT_FILE = Path("sent_posts.json")
+SENT_FILE = Path(os.getenv("YAD2BOT_STATE", "sent_posts.json"))
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
 
