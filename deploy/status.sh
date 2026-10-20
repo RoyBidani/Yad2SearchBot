@@ -19,7 +19,7 @@ CMD=$(aws ssm send-command --profile "$PROFILE" --region "$REGION" --instance-id
     \"echo '== timer';   systemctl is-enabled yad2bot.timer; systemctl list-timers yad2bot.timer --no-pager | sed -n 2p\",
     \"echo '== last run'; systemctl show yad2bot.service -p Result -p ExecMainExitTimestamp -p ExecMainStatus | tr '\\\\n' ' '; echo\",
     \"echo '== runs (time, new listings) since $SINCE'; journalctl -u yad2bot --since -$SINCE --no-pager -o short-iso | grep 'done:' | sed -E 's/^([0-9T:-]+).*done: ([0-9]+).*/\\\\1  \\\\2/'\",
-    \"echo '== radware'; journalctl -u yad2bot --since -$SINCE --no-pager -o short-iso | grep 'page title' | sed -E 's/^([0-9T:-]+).*title: /\\\\1  /' | tail -3\",
+    \"echo '== radware'; journalctl -u yad2bot --since -$SINCE --no-pager -o short-iso | grep 'yad2 page title' | sed -E 's/^([0-9T:-]+).*title: /\\\\1  /' | tail -3\",
     \"echo '== warnings/errors since $SINCE'; journalctl -u yad2bot --since -$SINCE --no-pager -o short-iso | grep -E 'WARN|ERR|unreachable|Traceback' | sed -E 's/python\\\\[[0-9]+\\\\]: //' | tail -5\",
     \"echo '== box'; free -m | sed -n 2p; df -h / | tail -1; systemctl is-active flightbot | sed 's/^/flightbot: /'\"
   ]}" --query Command.CommandId --output text)
