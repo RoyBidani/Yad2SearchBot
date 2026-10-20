@@ -40,8 +40,10 @@ def save_sent(sent):
 def open_yad2(pw):
     # ponytail: Radware bot-manager blocks plain HTTP clients. One real page load
     # earns the cookies; every feed call then runs as fetch() inside that page.
-    browser = pw.chromium.launch(headless=True)
-    page = browser.new_page(user_agent=UA, locale="he-IL")
+    # ponytail: persistent profile so Radware sees the same returning client every run instead of a fresh one
+    browser = pw.chromium.launch_persistent_context(os.getenv("YAD2BOT_PROFILE", ".pw-profile"),
+                                                    headless=True, user_agent=UA, locale="he-IL")
+    page = browser.pages[0] if browser.pages else browser.new_page()
     for attempt in range(4):  # ponytail: launchd often fires before Wi-Fi is back after wake
         try:
             page.goto(SITE, wait_until="domcontentloaded")

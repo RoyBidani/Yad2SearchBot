@@ -8,7 +8,7 @@ Type=oneshot
 User=yad2bot
 WorkingDirectory=/opt/yad2bot
 EnvironmentFile=/etc/yad2bot.env
-Environment=YAD2BOT_STATE=/var/lib/yad2bot/sent_posts.json PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers PYTHONUNBUFFERED=1
+Environment=YAD2BOT_STATE=/var/lib/yad2bot/sent_posts.json YAD2BOT_PROFILE=/var/lib/yad2bot/profile PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers PYTHONUNBUFFERED=1
 StateDirectory=yad2bot
 ExecStart=/opt/yad2bot/venv/bin/python main.py
 TimeoutStartSec=900
